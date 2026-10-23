@@ -58,6 +58,11 @@ public final class CaptureCheck {
             }
         }
 
+        if (!List.of("discord", "others", "system", "none").contains(remote)) {
+            System.err.println("Unknown --remote value \"" + remote + "\". Use discord, others, system or none.");
+            System.exit(2);
+        }
+
         WasapiBackend backend;
         try {
             backend = WasapiBackend.load();
