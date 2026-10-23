@@ -103,8 +103,17 @@ public final class CaptureCheck {
         }
 
         System.out.println();
-        for (Channel c : channels) c.finish();
+        boolean ok = true;
+        for (Channel c : channels) {
+            try {
+                c.finish();
+            } catch (IOException e) {
+                ok = false;
+                System.err.println("Could not finish " + c.label + ".wav: " + e);
+            }
+        }
         backend.shutdown();
+        if (!ok) System.exit(1);
         System.out.println("\nWAV files are in " + outDir.toAbsolutePath()
                 + ". Listen to them: speech should be clear, with no gaps or crackling.");
     }

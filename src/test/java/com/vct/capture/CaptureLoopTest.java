@@ -10,11 +10,15 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -177,6 +181,26 @@ class CaptureLoopTest {
         assertTrue(System.nanoTime() - t0 < 1_000_000_000L, "close took too long");
         assertEquals(CaptureLoop.State.STOPPED, loop.state());
         assertTrue(backend.streams.getFirst().closed);
+    }
+
+    @Test
+    void closeDoesNotInterruptTheSink() throws Exception {
+        // An interrupt closes any FileChannel the sink is writing to (found on Windows: WavWriter).
+        CountDownLatch inSink = new CountDownLatch(1);
+        AtomicBoolean interrupted = new AtomicBoolean();
+        backend.script(c -> stream16k(new float[]{0.1f}));
+        loop = new CaptureLoop("test", backend, CaptureLoop.TargetResolver.of(DEFAULT_MIC), samples -> {
+            inSink.countDown();
+            try {
+                Thread.sleep(200); // stands in for slow I/O
+            } catch (InterruptedException e) {
+                interrupted.set(true);
+            }
+        }, (s, d) -> {}, FAST, pid -> true).start();
+        assertTrue(inSink.await(3, TimeUnit.SECONDS));
+        loop.close();
+        assertFalse(interrupted.get(), "close() interrupted the capture thread while it was in the sink");
+        assertEquals(CaptureLoop.State.STOPPED, loop.state());
     }
 
     @Test

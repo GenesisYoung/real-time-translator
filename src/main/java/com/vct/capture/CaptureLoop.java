@@ -6,6 +6,8 @@ import java.time.Duration;
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.LongPredicate;
 
@@ -67,6 +69,7 @@ public final class CaptureLoop implements AutoCloseable {
     private final LongPredicate processAlive;
 
     private volatile boolean running = true;
+    private final CountDownLatch stopSignal = new CountDownLatch(1);
     private volatile State state = State.STARTING;
     private volatile String detail;
     private volatile CaptureStream.Stats stats = new CaptureStream.Stats(0, 0, 0);
@@ -117,8 +120,9 @@ public final class CaptureLoop implements AutoCloseable {
         synchronized (this) {
             t = thread;
         }
+        stopSignal.countDown(); // wakes a backoff wait; a native read returns on its own timeout
         if (t == null || t == Thread.currentThread()) return;
-        t.interrupt(); // wakes a backoff sleep; a native read returns on its own timeout
+        // No Thread.interrupt(): it would close any FileChannel the sink is writing to.
         try {
             t.join(config.readTimeout().toMillis() + 2_000);
         } catch (InterruptedException e) {
@@ -142,9 +146,10 @@ public final class CaptureLoop implements AutoCloseable {
                 if (!running) break;
                 setState(State.RECONNECTING, e.getMessage());
                 try {
-                    Thread.sleep(backoff);
+                    if (stopSignal.await(backoff, TimeUnit.MILLISECONDS)) break;
                 } catch (InterruptedException ie) {
-                    break; // only close() interrupts
+                    Thread.currentThread().interrupt();
+                    break;
                 }
                 backoff = Math.min(backoff * 2, config.maxBackoff().toMillis());
             } finally {
