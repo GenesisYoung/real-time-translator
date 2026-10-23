@@ -95,11 +95,11 @@ public final class WhisperRecognizer implements SpeechRecognizer {
     public static WhisperRecognizer open(Path library, Path model, boolean useGpu, int threads) throws SttException {
         if (!Files.isRegularFile(library)) {
             throw new SttException("Speech library not found: " + library.toAbsolutePath()
-                    + ". Build it (see native/stt/README.md) or pass -D" + LIBRARY_PROPERTY + "=<path>.");
+                    + ". Build it (see docs/speech-setup.md) or pass -D" + LIBRARY_PROPERTY + "=<path>.");
         }
         if (!Files.isRegularFile(model)) {
             throw new SttException("Whisper model not found: " + model.toAbsolutePath()
-                    + ". Download it (see native/stt/README.md).");
+                    + ". Download it (see docs/speech-setup.md).");
         }
         SymbolLookup lib;
         try {
