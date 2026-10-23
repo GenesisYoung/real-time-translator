@@ -52,6 +52,13 @@ tasks.test {
     useJUnitPlatform()
     dependsOn(buildNativeStub)
     systemProperty("vct.audio.stub", nativeStub.get().asFile.path)
+    // Built by hand (see native/stt/README.md); the Whisper binding tests are skipped until it exists.
+    val os = System.getProperty("os.name")
+    systemProperty("vct.stt.lib", file(when {
+        os.startsWith("Windows") -> "native/stt/build/Release/vct_stt.dll"
+        os.startsWith("Mac") -> "native/stt/build/vct_stt.dylib"
+        else -> "native/stt/build/vct_stt.so"
+    }).path)
     // FFM downcalls are "restricted methods"; without this the JDK prints a warning.
     jvmArgs("--enable-native-access=ALL-UNNAMED")
     systemProperty("file.encoding", "UTF-8")
