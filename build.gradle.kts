@@ -11,6 +11,8 @@ repositories {
 }
 
 dependencies {
+    // Runs Silero VAD on the CPU. The jar bundles native libraries for Windows, Linux and macOS.
+    implementation("com.microsoft.onnxruntime:onnxruntime:1.30.0")
     testImplementation(platform("org.junit:junit-bom:5.12.2"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
