@@ -3,7 +3,7 @@
 On-demand voice-chat translation for Windows 11 (personal use). Speech recognition, VAD and
 TTS run locally; only the text of an utterance you explicitly ask to translate is sent to OpenAI.
 
-## Status: Phase 1, step 1 of 4 (portable core)
+## Status: Phase 1, step 2 of 4 (audio capture)
 
 | Component | State |
 |---|---|
@@ -17,22 +17,25 @@ TTS run locally; only the text of an utterance you explicitly ask to translate i
 | Translation service (retry/backoff, deadline, cancel, dedupe, cache, runtime provider switch) | Implemented, unit-tested |
 | JSONL transcripts (crash-safe append, compaction, recovery) | Implemented, unit-tested |
 | Session orchestrator (Mode A: translate others, replay, retry, cancel, pause) | Implemented, end-to-end tested with fake STT/TTS/audio |
-| **WASAPI capture: mic + process loopback (native DLL + FFM)** | Not started (step 2) |
+| WASAPI capture DLL: microphone, process loopback (Discord / all except this app), endpoint loopback | Implemented; compiles with MinGW and ran under Wine. **Not yet run on Windows 11** (see [native/README.md](native/README.md)) |
+| FFM binding, `CaptureLoop` (reconnect, default-device follow, Discord restart, format fallback) | Implemented, unit-tested; binding tested against a native stub |
+| `captureCheck` diagnostic (device list, level meters, WAV recording) | Implemented; for running on Windows |
 | **Silero VAD, Whisper (CUDA), Piper TTS through sherpa-onnx / whisper.cpp** | Not started (step 3) |
 | **JavaFX UI, tray, hotkey, keychain storage (Windows Credential Manager), settings** | Not started (step 4) |
 
-44 tests, all passing on JDK 23 (macOS arm64). They have not yet been run on Windows.
+66 tests, all passing on JDK 25 (Linux x64). Before step 2, the 44 core tests also passed on JDK 23 (macOS arm64). No tests have run on Windows yet.
 
 ## Build and test
 
-Requires JDK 23 or newer (JDK 25 LTS recommended on Windows). The Gradle wrapper downloads Gradle on first use.
+Requires JDK 23 or newer (JDK 25 LTS recommended on Windows). The Gradle wrapper downloads Gradle 9.8.1 on first use.
 
 ```
 gradlew.bat test        # Windows
 ./gradlew test          # macOS / Linux
 ```
 
-There is no runnable app yet: step 1 is the library core plus its tests.
+There is no runnable app yet. To check audio capture on Windows, build the DLL and run
+`gradlew captureCheck` (see [native/README.md](native/README.md)).
 
 ## Design decisions specific to Windows 11
 
