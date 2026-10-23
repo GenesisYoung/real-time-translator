@@ -86,3 +86,19 @@ tasks.register<JavaExec>("captureCheck") {
     systemProperty("vct.audio.lib", file("native/build/Release/vct_audio.dll").path)
     standardInput = System.`in`
 }
+
+// Checks the speech engines on this PC (see docs/speech-setup.md). Examples:
+//   gradlew speechCheck --args="transcribe build\capture-check\remote.wav"
+//   gradlew speechCheck --args="say 我们应该往左走。"
+//   gradlew speechCheck --args="live --openai-model <model> --remote others"
+tasks.register<JavaExec>("speechCheck") {
+    group = "verification"
+    description = "Checks Whisper, the TTS voice, or the whole live pipeline."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass = "com.vct.tools.SpeechCheck"
+    jvmArgs("--enable-native-access=ALL-UNNAMED")
+    systemProperty("vct.audio.lib", file("native/build/Release/vct_audio.dll").path)
+    systemProperty("file.encoding", "UTF-8")
+    systemProperty("stdout.encoding", "UTF-8")
+    standardInput = System.`in`
+}
