@@ -26,10 +26,30 @@ Windows converts every source to the requested format (16 kHz mono float), so Ja
    The result is `native\build\Release\vct_audio.dll`. It needs no Visual C++ Redistributable,
    because the C++ runtime is linked statically.
 
+### From PowerShell (for example, the VS Code terminal)
+
+A normal PowerShell does not know `cmake` or the compiler: only the Visual Studio prompts add them
+to `PATH`. Load them into the current terminal first (this works for any Visual Studio version):
+
+```powershell
+$vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath
+& "$vs\Common7\Tools\Launch-VsDevShell.ps1" -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
+```
+
+PowerShell also does not run programs from the current folder by name, so type `.\gradlew`
+instead of `gradlew`:
+
+```powershell
+cmake -S native -B native\build -A x64
+cmake --build native\build --config Release
+.\gradlew test
+.\gradlew captureCheck --args="--seconds 15 --remote discord"
+```
+
 ## Check it on your PC
 
 ```
-gradlew captureCheck --args="--list"
+gradlew captureCheck --args="--list"                       # PowerShell: .\gradlew
 gradlew captureCheck --args="--seconds 15 --remote discord"
 ```
 

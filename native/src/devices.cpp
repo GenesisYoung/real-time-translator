@@ -144,7 +144,9 @@ private:
 
 DeviceWatcher g_watcher;
 std::mutex g_watch_mutex;
-std::thread g_watch_thread;
+// A pointer, never a static std::thread: if the app exits without vct_shutdown, the destructor of a
+// still-joinable std::thread calls std::terminate and the whole process aborts (0xC0000409 on MSVC).
+std::thread *g_watch_thread = nullptr;
 HANDLE g_watch_stop = nullptr;
 
 void start_watching_locked() {
@@ -157,7 +159,7 @@ void start_watching_locked() {
         return;
     }
     HANDLE stop = g_watch_stop;
-    g_watch_thread = std::thread([stop, ready] {
+    g_watch_thread = new std::thread([stop, ready] {
         ComScope com;
         ComPtr<IMMDeviceEnumerator> e;
         bool registered = SUCCEEDED(com.result())
@@ -170,8 +172,8 @@ void start_watching_locked() {
         e->UnregisterEndpointNotificationCallback(&g_watcher);
     });
     // Registration is quick; waiting means events right after the first call are not missed.
-    WaitForSingleObject(ready, 5000);
-    CloseHandle(ready);
+    // On timeout the thread may still signal `ready` later, so the handle is left open.
+    if (WaitForSingleObject(ready, 5000) == WAIT_OBJECT_0) CloseHandle(ready);
 }
 
 }  // namespace
@@ -207,7 +209,9 @@ VCT_API void vct_shutdown(void) {
     std::lock_guard<std::mutex> lock(g_watch_mutex);
     if (!g_watch_stop) return;
     SetEvent(g_watch_stop);
-    if (g_watch_thread.joinable()) g_watch_thread.join();
+    g_watch_thread->join();
+    delete g_watch_thread;
+    g_watch_thread = nullptr;
     CloseHandle(g_watch_stop);
     g_watch_stop = nullptr;
 }

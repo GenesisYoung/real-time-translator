@@ -58,6 +58,11 @@ public final class CaptureCheck {
             }
         }
 
+        if (!List.of("discord", "others", "system", "none").contains(remote)) {
+            System.err.println("Unknown --remote value \"" + remote + "\". Use discord, others, system or none.");
+            System.exit(2);
+        }
+
         WasapiBackend backend;
         try {
             backend = WasapiBackend.load();
@@ -98,8 +103,17 @@ public final class CaptureCheck {
         }
 
         System.out.println();
-        for (Channel c : channels) c.finish();
+        boolean ok = true;
+        for (Channel c : channels) {
+            try {
+                c.finish();
+            } catch (IOException e) {
+                ok = false;
+                System.err.println("Could not finish " + c.label + ".wav: " + e);
+            }
+        }
         backend.shutdown();
+        if (!ok) System.exit(1);
         System.out.println("\nWAV files are in " + outDir.toAbsolutePath()
                 + ". Listen to them: speech should be clear, with no gaps or crackling.");
     }
