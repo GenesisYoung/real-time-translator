@@ -3,13 +3,11 @@
 You speak Chinese; the others in voice chat hear English or Japanese. Everything you say is translated
 and spoken automatically. The others hear **only the translation**, never your real voice.
 
+```mermaid
+flowchart LR
+    A["You speak"] --> B["Your microphone"] --> C["Whisper"] --> D["OpenAI translation"] --> E["OpenAI voice"]
+    E --> F["CABLE Input"] --> G["VB-CABLE"] --> H["CABLE Output"] --> I["Discord's microphone"]
 ```
-You speak ──► your microphone ──► Whisper ──► OpenAI translation ──► OpenAI voice
-                                                                        │
-                                                                        ▼
-Discord's microphone ◄── "CABLE Output" ◄── VB-CABLE ◄── "CABLE Input"
-```
-
 VB-CABLE is a free virtual audio cable: what the app plays into **CABLE Input** comes out of
 **CABLE Output**, which Discord uses as its microphone.
 
