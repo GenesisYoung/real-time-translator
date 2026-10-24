@@ -15,6 +15,10 @@
 #include "whisper.h"
 
 #ifdef _WIN32
+// Without NOMINMAX, <windows.h> defines min and max macros that break std::min / std::max (MSVC C2589).
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
 #  include <windows.h>
 #endif
 
@@ -58,7 +62,8 @@ FILE *open_utf8(const char *path) {
     if (n <= 0) return nullptr;
     std::wstring w(static_cast<size_t>(n), L'\0');
     MultiByteToWideChar(CP_UTF8, 0, path, -1, w.data(), n);
-    return _wfopen(w.c_str(), L"rb");
+    FILE *f = nullptr;
+    return _wfopen_s(&f, w.c_str(), L"rb") == 0 ? f : nullptr;
 #else
     return std::fopen(path, "rb");
 #endif
