@@ -33,7 +33,7 @@ FetchContent_MakeAvailable(whisper)
 
 add_library(vct_stt SHARED src/vct_stt.cpp)
 target_include_directories(vct_stt PUBLIC include)
-target_compile_definitions(vct_stt PRIVATE VCT_STT_BUILD)
+target_compile_definitions(vct_stt PRIVATE VCT_STT_BUILD $<$<BOOL:${WIN32}>:NOMINMAX>)
 target_link_libraries(vct_stt PRIVATE whisper)
 set_target_properties(vct_stt PROPERTIES PREFIX "" CXX_VISIBILITY_PRESET hidden)
 if(MSVC)
