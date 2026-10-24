@@ -2,6 +2,7 @@ package com.vct.session;
 
 import com.vct.audio.AudioClip;
 import com.vct.audio.AudioSink;
+import com.vct.feedback.FeedbackGuard;
 import com.vct.model.Source;
 import com.vct.model.Utterance;
 import com.vct.transcript.TranscriptSink;
@@ -14,6 +15,7 @@ import com.vct.tts.TtsEngine;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -74,10 +76,12 @@ class SpeechRelayTest {
         @Override public void close() {}
     };
 
+    private final FeedbackGuard echoGuard = FeedbackGuard.defaults(Clock.systemUTC());
+
     private SpeechRelay relay(String target) {
         relay = new SpeechRelay(SpeechRelay.Config.defaults(target),
                 new TranslationService(provider, new TranslationService.RetryPolicy(1, Duration.ofMillis(1), Duration.ofMillis(1), Duration.ofSeconds(5))),
-                tts, cable, transcriptSink, new SpeechRelay.Listener() {
+                tts, cable, transcriptSink, echoGuard, new SpeechRelay.Listener() {
                     @Override public void onRelaySkipped(Utterance u, String reason) { events.add("skip " + u.id() + ": " + reason); }
                     @Override public void onRelaySent(Utterance u) { events.add("sent " + u.id()); }
                     @Override public void onRelayError(Utterance u, String m) { events.add("error " + u.id() + ": " + m); }
@@ -125,6 +129,9 @@ class SpeechRelayTest {
         assertEquals("en", requests.getFirst().targetLanguage());
         assertEquals("Let's go around the left.", transcript.get(first.id() + "|en"));
         assertTrue(events.contains("sent " + first.id()) && events.contains("sent " + second.id()), events.toString());
+        // What was spoken is known to the echo guard: hearing it back through a microphone is dropped.
+        Instant now = Instant.now();
+        assertTrue(echoGuard.isEcho("Let's go around the left.", now.minusSeconds(1), now));
     }
 
     @Test

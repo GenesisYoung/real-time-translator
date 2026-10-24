@@ -4,6 +4,7 @@ import com.vct.audio.AudioSink;
 import com.vct.buffer.ConversationBuffer;
 import com.vct.capture.AudioDevice;
 import com.vct.capture.CaptureBackend;
+import com.vct.capture.CaptureException;
 import com.vct.capture.CaptureLoop;
 import com.vct.feedback.FeedbackGuard;
 import com.vct.model.Source;
@@ -185,14 +186,16 @@ public final class SessionController implements AutoCloseable {
                 Map.of("app", "voice-chat-translator", "remote", s.remoteSource().name()), clock);
         transcriptFile = transcript.file();
 
+        // One guard for both directions: the app's own speech is never taken for speech to translate.
+        FeedbackGuard echoGuard = FeedbackGuard.defaults(clock);
         UtteranceSegmenter.Config seg = UtteranceSegmenter.Config.defaults();
         TranslatorSession.Components c = new TranslatorSession.Components(vad,
                 Map.of(Source.REMOTE, seg, Source.MIC, seg), recognizer, HallucinationFilter.defaults(), tts,
                 engines.sink(s), translation, transcript, new ConversationBuffer(50, Duration.ofMinutes(15), clock),
-                FeedbackGuard.defaults(clock), clock);
+                echoGuard, clock);
         SessionSettings settings = new SessionSettings(s.nativeLanguage(), new LinkedHashSet<>(s.recognizedLanguages()),
                 List.of(), s.contextLines(), Duration.ofMillis(1500), null, (float) s.ttsSpeed());
-        relay = startRelay(s, transcript);
+        relay = startRelay(s, transcript, echoGuard);
         TranslatorSession started = new TranslatorSession(c, settings, new Forwarding(listener) {
             @Override
             public void onUtterance(Utterance u) {
@@ -212,18 +215,37 @@ public final class SessionController implements AutoCloseable {
     }
 
     /** Null when switched off, or when its output device is missing (Translate others keeps working). */
-    private SpeechRelay startRelay(AppSettings s, JsonlTranscriptWriter transcript) {
+    private SpeechRelay startRelay(AppSettings s, JsonlTranscriptWriter transcript, FeedbackGuard echoGuard) {
         AppSettings.RelaySettings rs = s.relay();
         if (!rs.enabled()) return null;
+        String micName = microphoneName(s);
+        if (micName != null && micName.toLowerCase(java.util.Locale.ROOT).contains("cable")) {
+            // The translation plays into the cable; hearing the cable as "my voice" would loop forever.
+            listener.onError("Translate my speech is off: the microphone is \"" + micName + "\", the virtual cable. "
+                    + "Choose your real microphone in Settings (or as the Windows default microphone).", null);
+            return null;
+        }
         try {
             AudioSink cable = engines.relaySink(s);
             return new SpeechRelay(SpeechRelay.Config.defaults(rs.targetLanguage()), translation,
-                    engines.relayTts(s, apiKey), cable, transcript, listener);
+                    engines.relayTts(s, apiKey), cable, transcript, echoGuard, listener);
         } catch (RuntimeException e) {
             listener.onError("Translate my speech is off: " + e.getMessage()
                     + " Install VB-CABLE (see docs/speech-setup.md) or choose another output in Settings.", e);
             return null;
         }
+    }
+
+    /** Name of the microphone this session records (the chosen one, else the Windows default), or null. */
+    private String microphoneName(AppSettings s) {
+        try {
+            for (AudioDevice d : backend.listDevices(AudioDevice.Flow.CAPTURE)) {
+                if (s.micDeviceId() == null ? d.isDefault() : d.id().equals(s.micDeviceId())) return d.name();
+            }
+        } catch (CaptureException e) {
+            // unknown: the echo guard is the second line of defence
+        }
+        return null;
     }
 
     /** Pauses or resumes "translate my speech" (the pause hotkey). */

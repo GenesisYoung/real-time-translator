@@ -174,6 +174,20 @@ class SessionControllerTest {
     }
 
     @Test
+    void refusesToRelayWhenTheMicrophoneIsTheCable() throws Exception {
+        // Installing VB-CABLE can make "CABLE Output" the default microphone: the app would then hear its
+        // own translation as the user's speech and translate it again, forever.
+        engines.microphones = List.of(new AudioDevice("{headset}", "Headset (WH-CH520)", false, false),
+                new AudioDevice("{cable}", "CABLE Output (VB-Audio Virtual Cable)", true, true));
+        SessionController c = controller();
+        c.start(withRelay(true)).get(5, TimeUnit.SECONDS);
+        assertEquals(SessionController.Status.RUNNING, c.status(), "translating others still works");
+        assertTrue(events.stream().anyMatch(e -> e.startsWith(
+                "error Translate my speech is off: the microphone is \"CABLE Output (VB-Audio Virtual Cable)\"")), events.toString());
+        assertTrue(events.contains("relay false false null"), events.toString());
+    }
+
+    @Test
     void explainsWhyItCannotTranslateYet() throws Exception {
         SessionController c = controller();
         c.translateLatest();
@@ -204,11 +218,12 @@ class SessionControllerTest {
         volatile RuntimeException recognizerFailure;
         volatile boolean micSpeaks;
         volatile boolean cableMissing;
+        volatile List<AudioDevice> microphones = List.of(new AudioDevice("{headset}", "Headset (WH-CH520)", true, true));
 
         @Override
         public CaptureBackend captureBackend() {
             return new CaptureBackend() {
-                @Override public List<AudioDevice> listDevices(AudioDevice.Flow flow) { return List.of(); }
+                @Override public List<AudioDevice> listDevices(AudioDevice.Flow flow) { return microphones; }
                 @Override public long deviceChangeCount() { return 0; }
 
                 @Override

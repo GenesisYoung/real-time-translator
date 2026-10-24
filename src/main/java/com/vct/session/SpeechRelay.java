@@ -2,6 +2,7 @@ package com.vct.session;
 
 import com.vct.audio.AudioClip;
 import com.vct.audio.AudioSink;
+import com.vct.feedback.FeedbackGuard;
 import com.vct.model.Source;
 import com.vct.model.Utterance;
 import com.vct.transcript.TranscriptSink;
@@ -13,6 +14,7 @@ import com.vct.tts.TtsEngine;
 
 import java.io.IOException;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.List;
@@ -65,6 +67,7 @@ public final class SpeechRelay implements AutoCloseable {
     private final AudioSink sink;
     private final TranscriptSink transcript;
     private final Listener listener;
+    private final FeedbackGuard echoGuard;
     private final ExecutorService playback = Executors.newSingleThreadExecutor(
             Thread.ofPlatform().name("vct-relay-playback").daemon().factory());
     private final ExecutorService work = Executors.newVirtualThreadPerTaskExecutor();
@@ -73,8 +76,13 @@ public final class SpeechRelay implements AutoCloseable {
     private volatile boolean paused;
     private volatile boolean closed;
 
+    /**
+     * @param echoGuard told what is being spoken, so that if the translation ever comes back in
+     *                  through a microphone, recognition drops it instead of translating it again
+     */
     public SpeechRelay(Config config, TranslationService translator, TtsEngine tts, AudioSink sink,
-                       TranscriptSink transcript, Listener listener) {
+                       TranscriptSink transcript, FeedbackGuard echoGuard, Listener listener) {
+        this.echoGuard = echoGuard;
         this.config = config;
         this.translator = translator;
         this.tts = tts;
@@ -157,6 +165,8 @@ public final class SpeechRelay implements AutoCloseable {
             return;
         }
         try {
+            Instant now = Instant.now();
+            echoGuard.register(p.translation().text(), now, now.plus(p.clip().duration()));
             sink.play(p.clip());
             listener.onRelaySent(u);
         } catch (InterruptedException e) {
