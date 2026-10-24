@@ -147,7 +147,7 @@ public final class GlobalHotkeys implements AutoCloseable {
         run(hold.press());
         Thread.ofPlatform().name("vct-hotkey-hold").daemon().start(() -> {
             try {
-                // The high bit (a negative short) means "down". Ctrl, Alt etc. may be let go first.
+                // The high bit (a negative short) means "down". Only the main key counts, not Ctrl or Alt.
                 while (!closed && (short) invoke(keyState, k.virtualKey()) < 0) Thread.sleep(RELEASE_POLL_MS);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();

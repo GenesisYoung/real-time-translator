@@ -203,7 +203,7 @@ final class SettingsDialog {
         row = field(g, row, "Pause my voice", pauseKey);
         row = field(g, row, "Talk live (hold)", liveKey);
         row = field(g, row, "", hint("While you hold it, your real voice goes into the voice chat, not translated: "
-                + "for when you speak English or Japanese yourself. You can let go of Ctrl and Alt once it is down."));
+                + "for when you speak English or Japanese yourself. Keep all of its keys held while you talk."));
         row = field(g, row, "", hint("For example Ctrl+Alt+T, Shift+F9 or F13. They work while a game has focus."));
         g.add(error, 0, row, 2, 1);
 

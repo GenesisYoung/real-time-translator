@@ -73,7 +73,8 @@ flowchart LR
 ```
 
 - The status line turns red: **LIVE: your own voice**.
-- Once the key is down you can let go of Ctrl and Alt; it stays live until you release the **V** key.
+- Keep all three keys held while you talk. If you let go of Ctrl and Alt but keep holding V, the game
+  receives plain V key presses.
 - It also keeps the last 0.15 s before you pressed the key and goes on for 0.3 s after you release it,
   so your first and last words are not cut off.
 - What you say while live still appears in the history, marked *spoken live, not translated*. It is
