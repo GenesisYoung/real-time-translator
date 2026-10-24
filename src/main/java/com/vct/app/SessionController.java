@@ -2,6 +2,7 @@ package com.vct.app;
 
 import com.vct.audio.AudioSink;
 import com.vct.buffer.ConversationBuffer;
+import com.vct.capture.AudioDevice;
 import com.vct.capture.CaptureBackend;
 import com.vct.capture.CaptureLoop;
 import com.vct.feedback.FeedbackGuard;
@@ -235,9 +236,19 @@ public final class SessionController implements AutoCloseable {
         if (s != null) s.cancel();
     }
 
+    /** Lists audio devices (blocking: call off the UI thread). Loads the capture library if needed. */
+    public List<AudioDevice> listDevices(AudioDevice.Flow flow) throws Exception {
+        return engines.captureBackend().listDevices(flow);
+    }
+
     /** Lists the models the API key can use (blocking: call off the UI thread). */
     public List<String> listModels(AppSettings s) throws Exception {
         return engines.translator(s, apiKey).listModels();
+    }
+
+    /** As {@link #listModels(AppSettings)}, with a key typed in Settings but not saved yet. */
+    public List<String> listModels(AppSettings s, String key) throws Exception {
+        return engines.translator(s, () -> key).listModels();
     }
 
     private TranslatorSession runningSession() {

@@ -3,7 +3,7 @@
 On-demand voice-chat translation for Windows 11 (personal use). Speech recognition, VAD and
 TTS run locally; only the text of an utterance you explicitly ask to translate is sent to OpenAI.
 
-## Status: Phase 1, step 3 of 4 (speech engines)
+## Status: Phase 1, step 4 of 4 (desktop app)
 
 | Component | State |
 |---|---|
@@ -25,7 +25,10 @@ TTS run locally; only the text of an utterance you explicitly ask to translate i
 | TTS via sherpa-onnx 1.13.8 C API (Piper / MeloTTS / Kokoro voices) | Implemented; Chinese Piper voice runs on Windows 11. Kokoro and MeloTTS voices not tested |
 | Headphone playback (Java Sound) | Implemented, tested with a null audio device |
 | `speechCheck` diagnostic (`transcribe`, `say`, `live`) | Implemented; the `live` pipeline (capture, VAD, Whisper, OpenAI, Chinese TTS) works on Windows 11. Setup in [docs/speech-setup.md](docs/speech-setup.md) |
-| **JavaFX UI, tray, hotkey, keychain storage (Windows Credential Manager), settings** | Not started (step 4) |
+| API key in Windows Credential Manager (advapi32 through FFM) | Implemented; same calls verified in C under Wine. **Java test runs on Windows only** |
+| Global hotkeys (RegisterHotKey message loop through FFM) | Implemented; same calls verified in C under Wine. **Java test runs on Windows only** |
+| Settings (JSON in `%APPDATA%`) and session controller | Implemented, unit-tested with fake engines |
+| JavaFX window, settings dialog, tray icon (`gradlew run`) | Implemented; rendered under Xvfb on Linux. **Not yet run on Windows** |
 
 97 tests, all passing on JDK 25 (Linux x64) with every engine present. Without the optional native
 libraries and voices, 6 of them are skipped (Whisper binding, TTS synthesis, playback). The step 2 suite
@@ -42,8 +45,19 @@ gradlew.bat test        # Windows
 ./gradlew test          # macOS / Linux
 ```
 
-There is no runnable app yet. To check audio capture on Windows, build the DLL and run
-`gradlew captureCheck` (see [native/README.md](native/README.md)).
+## Run the app
+
+After the setup in [docs/speech-setup.md](docs/speech-setup.md):
+
+```
+gradlew.bat run
+```
+
+1. Open **Settings**, paste your OpenAI API key (it goes to Windows Credential Manager) and press OK.
+2. Press **Start**. Loading the engines takes a few seconds.
+3. When someone speaks, press **Ctrl+Alt+T**, even while a game has focus. You hear the Chinese
+   translation, and it appears in the window. **Ctrl+Alt+R** replays it. Double-click a line to translate it.
+4. Closing the window keeps the app in the tray, and the hotkeys keep working. Quit from the tray menu.
 
 ## Design decisions specific to Windows 11
 
