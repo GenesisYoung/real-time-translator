@@ -4,6 +4,7 @@ import com.vct.app.SessionController;
 import com.vct.capture.CaptureLoop;
 import com.vct.model.Source;
 import com.vct.model.Utterance;
+import com.vct.session.SpeechRelay;
 import com.vct.translate.TranslationResult;
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
@@ -230,8 +231,8 @@ final class MainWindow implements SessionController.Listener {
     }
 
     @Override
-    public void onRelaySent(Utterance u) {
-        runOnFx(() -> find(u).ifPresent(i -> i.note.set("sent to voice chat")));
+    public void onRelaySent(Utterance u, SpeechRelay.Delay delay) {
+        runOnFx(() -> find(u).ifPresent(i -> i.note.set("sent to voice chat · heard " + delay + " after you stopped")));
     }
 
     @Override

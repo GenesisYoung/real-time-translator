@@ -11,6 +11,10 @@ public final class Launcher {
     private Launcher() {}
 
     public static void main(String[] args) {
+        // Keep idle connections to OpenAI open for 10 minutes (Java's default is 30 s): a new
+        // connection costs a TLS handshake, a few hundred milliseconds on every line after a pause.
+        System.setProperty("jdk.httpclient.keepalive.timeout", "600");
+        System.setProperty("jdk.httpclient.keepalive.timeout.h2", "600");
         Application.launch(TranslatorApp.class, args);
     }
 }

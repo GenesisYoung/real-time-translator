@@ -52,7 +52,7 @@ public final class UiPreviewApp extends Application implements MainWindow.Action
                 () -> w.onTranslation(b, new TranslationResult("右边的建筑里有三个敌人，小心。", "openai", "gpt-4.1-mini", Duration.ofMillis(1612), false)),
                 () -> w.onUtterance(c),
                 () -> w.onRelayTranslation(c, new TranslationResult("了解、左から回り込むね。", "openai", "gpt-4.1-mini", Duration.ofMillis(1200), false)),
-                () -> w.onRelaySent(c),
+                () -> w.onRelaySent(c, new com.vct.session.SpeechRelay.Delay(java.time.Duration.ofMillis(700), java.time.Duration.ofMillis(600), java.time.Duration.ofMillis(400))),
                 () -> w.onUtterance(d),
                 () -> w.onTranslationStarted(d));
         for (int i = 0; i < events.size(); i++) after(100 + 60L * i, events.get(i));

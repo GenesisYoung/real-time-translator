@@ -65,7 +65,7 @@ class SessionControllerTest {
         @Override public void onTranslation(Utterance u, TranslationResult r) { translated.add(r); }
         @Override public void onCaptureState(Source s, CaptureLoop.State st, String d) { events.add(s + " " + st); }
         @Override public void onRelayState(boolean active, boolean paused, String lang) { events.add("relay " + active + " " + paused + " " + lang); }
-        @Override public void onRelaySent(Utterance u) { events.add("sent " + u.id()); }
+        @Override public void onRelaySent(Utterance u, com.vct.session.SpeechRelay.Delay d) { events.add("sent " + u.id()); }
         @Override public void onRelayLive(boolean live) { events.add("live " + live); }
     };
 
