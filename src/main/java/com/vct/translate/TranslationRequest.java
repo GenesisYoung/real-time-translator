@@ -29,8 +29,11 @@ public record TranslationRequest(
         protectedTerms = List.copyOf(protectedTerms);
     }
 
-    /** Key used to avoid re-translating the same utterance into the same target. */
+    /**
+     * Key used to avoid re-translating the same utterance into the same target. The text is part of
+     * it: utterance ids start again at r-0001 in every session, and the cache outlives sessions.
+     */
     String cacheKey() {
-        return utteranceId + '|' + targetLanguage + '|' + mode;
+        return utteranceId + '|' + targetLanguage + '|' + mode + '|' + text;
     }
 }

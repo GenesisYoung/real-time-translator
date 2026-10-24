@@ -80,7 +80,18 @@ class TranslationServiceTest {
             assertEquals(1, p.calls.get(), "same utterance is not sent twice");
             assertFalse(s.translate(req("a"), true).get().fromCache());
             assertEquals(2, p.calls.get(), "explicit retry sends again");
-            assertTrue(s.isTranslated("a", "en", TranslationMode.TRANSLATE));
+        }
+    }
+
+    @Test
+    void anotherLineWithTheSameIdIsNotTakenFromTheCache() throws Exception {
+        // Ids start again at r-0001 in every session, but the service (and its cache) is kept.
+        var p = new ScriptedProvider(List.of(), null);
+        try (var s = new TranslationService(p, FAST)) {
+            s.translate(new TranslationRequest("r-0005", "Push mid.", "en", "zh", TranslationMode.TRANSLATE, List.of(), List.of()), false).get();
+            var other = s.translate(new TranslationRequest("r-0005", "Wait for me.", "en", "zh", TranslationMode.TRANSLATE, List.of(), List.of()), false).get();
+            assertFalse(other.fromCache());
+            assertEquals(2, p.calls.get());
         }
     }
 

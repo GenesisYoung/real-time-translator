@@ -197,6 +197,18 @@ class SessionControllerTest {
     }
 
     @Test
+    void aNewSessionNeverShowsTheTranslationsOfThePreviousOne() throws Exception {
+        // Line ids start again at r-0001; the earlier session's r-0001 must not be taken from the cache.
+        SessionController c = controller();
+        c.setSubtitles(true, false);
+        c.start(AppSettings.defaults()).get(5, TimeUnit.SECONDS);
+        await("first session translated", () -> !translated.isEmpty());
+        c.start(AppSettings.defaults()).get(5, TimeUnit.SECONDS);
+        await("second session translated", () -> translated.size() >= 2);
+        assertFalse(translated.get(1).fromCache(), "asked again, not taken from the earlier session");
+    }
+
+    @Test
     void subtitlesWithoutAKeyExplainWhy() throws Exception {
         apiKey.set(null);
         SessionController c = controller();

@@ -74,10 +74,6 @@ public final class TranslationService implements AutoCloseable {
         return cf;
     }
 
-    public boolean isTranslated(String utteranceId, String targetLanguage, TranslationMode mode) {
-        return cache.containsKey(utteranceId + '|' + targetLanguage + '|' + mode);
-    }
-
     public void clearCache() {
         cache.clear();
     }
