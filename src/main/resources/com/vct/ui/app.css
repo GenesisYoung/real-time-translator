@@ -27,6 +27,15 @@
     -fx-fill: #ef6c00;
 }
 
+.dot.live {
+    -fx-fill: #d32f2f;
+}
+
+.live-text {
+    -fx-text-fill: #d32f2f;
+    -fx-font-weight: bold;
+}
+
 .line-header {
     -fx-font-size: 11px;
     -fx-text-fill: -fx-mid-text-color;

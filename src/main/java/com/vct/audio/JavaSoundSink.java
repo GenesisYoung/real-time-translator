@@ -108,6 +108,37 @@ public final class JavaSoundSink implements AudioSink {
         p.line.flush();
     }
 
+    /** Live line buffer: room for capture blocks arriving late, short enough to keep the delay low. */
+    private static final int STREAM_BUFFER_MS = 200;
+
+    @Override
+    public AudioStream openStream(int sampleRate) {
+        AudioFormat format = new AudioFormat(sampleRate, 16, 1, true, false);
+        SourceDataLine line;
+        try {
+            line = device == null ? AudioSystem.getSourceDataLine(format) : AudioSystem.getSourceDataLine(format, device);
+            line.open(format, sampleRate * 2 * STREAM_BUFFER_MS / 1000);
+        } catch (LineUnavailableException | IllegalArgumentException e) {
+            throw new IllegalStateException("Cannot play on " + (device == null ? "the default output" : device.getName())
+                    + ": " + e.getMessage(), e);
+        }
+        line.start();
+        return new AudioStream() {
+            @Override
+            public synchronized void write(float[] samples) {
+                byte[] pcm = toPcm16(samples);
+                int n = Math.min(pcm.length, line.available() & ~1); // write() would block when the buffer is full
+                if (n > 0) line.write(pcm, 0, n);
+            }
+
+            @Override
+            public synchronized void close() {
+                line.drain();
+                line.close();
+            }
+        };
+    }
+
     static byte[] toPcm16(float[] samples) {
         byte[] out = new byte[samples.length * 2];
         for (int i = 0; i < samples.length; i++) {

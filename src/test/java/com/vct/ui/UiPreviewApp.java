@@ -31,7 +31,7 @@ public final class UiPreviewApp extends Application implements MainWindow.Action
     @Override
     public void start(Stage stage) {
         MainWindow w = new MainWindow(stage, this);
-        w.setHotkeyHints("Ctrl+Alt+T", "Ctrl+Alt+R", "Ctrl+Alt+M");
+        w.setHotkeyHints("Ctrl+Alt+T", "Ctrl+Alt+R", "Ctrl+Alt+M", "Ctrl+Alt+V");
         w.onRelayState(true, false, "ja");
         w.setRemoteLabel("All audio except this app");
         w.onStatus(SessionController.Status.RUNNING, "Listening (All audio except this app)");

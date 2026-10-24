@@ -58,12 +58,40 @@ The status line shows **My voice → English** (green). In the history, your lin
 **Ctrl+Alt+M** (or **Pause my voice**) pauses it for side comments: nothing you say is sent until you
 resume. The dot turns orange.
 
+## 5. Talk live: your own voice, with no delay
+
+When you speak English (or Japanese) yourself, **hold Ctrl+Alt+V** while you talk. Your real
+microphone then goes straight into the voice chat, with no delay and nothing translated.
+
+```mermaid
+flowchart LR
+    M["Your microphone"] --> Q{"Ctrl+Alt+V held?"}
+    Q -- "yes" --> L["Straight into CABLE Input<br/>(your real voice, no delay)"]
+    Q -- "no" --> T["Whisper → translation → OpenAI voice<br/>(2 to 4 s later)"] --> C["CABLE Input"]
+    L --> D["Discord"]
+    C --> D
+```
+
+- The status line turns red: **LIVE: your own voice**.
+- Keep all three keys held while you talk. If you let go of Ctrl and Alt but keep holding V, the game
+  receives plain V key presses.
+- It also keeps the last 0.15 s before you pressed the key and goes on for 0.3 s after you release it,
+  so your first and last words are not cut off.
+- What you say while live still appears in the history, marked *spoken live, not translated*. It is
+  not sent a second time, and it costs nothing.
+- Pressing the key cuts off the translation being spoken. Translations that become ready while you
+  are talking wait until you release the key.
+- It works even while translate-my-speech is paused (Ctrl+Alt+M).
+- You can choose another key in **Settings → Hotkeys → Talk live (hold)**. Avoid keys that the game
+  uses.
+
 ## Good to know
 
 - **Delay**: the translation plays about 2 to 4 seconds after you stop speaking (pause detection,
   recognition, translation and the voice).
 - **Cost**: every line you say is one translation request and one speech request to OpenAI.
 - Coughs and very short sounds are not sent. Lines Whisper is unsure about are not sent either: say them again.
-- If you already speak the target language (e.g. Japanese while "Others hear: Japanese"), the line is
-  spoken as it is, without translating.
+- If you already speak the target language (e.g. Japanese while "Others hear: Japanese") *without*
+  holding the talk-live key, the line is still spoken by the OpenAI voice, as it is, without
+  translating. Hold the talk-live key for your own voice with no delay.
 - Translating others (Ctrl+Alt+T) keeps working at the same time, in Chinese, on your headphones only.

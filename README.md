@@ -29,7 +29,8 @@ TTS run locally; only the text of an utterance you explicitly ask to translate i
 | Global hotkeys (RegisterHotKey message loop through FFM) | Implemented; same calls verified in C under Wine. **Java test runs on Windows only** |
 | Settings (JSON in `%APPDATA%`) and session controller | Implemented, unit-tested with fake engines |
 | JavaFX window, settings dialog, tray icon (`gradlew run`) | Implemented; runs on Windows 11 |
-| Translate my speech: automatic, English or Japanese, into VB-CABLE (`SpeechRelay`, OpenAI speech) | Implemented, unit-tested with fakes and a local speech-API stand-in. **Not yet run on Windows or with Discord** (setup: [docs/translate-my-speech.md](docs/translate-my-speech.md)) |
+| Translate my speech: automatic, English or Japanese, into VB-CABLE (`SpeechRelay`, OpenAI speech) | Works on Windows with Discord (setup: [docs/translate-my-speech.md](docs/translate-my-speech.md)) |
+| Talk live: hold Ctrl+Alt+V to send your real voice with no delay (`LiveVoice`, held hotkeys) | Implemented, unit-tested with fakes. **Not yet run on Windows** |
 
 97 tests, all passing on JDK 25 (Linux x64) with every engine present. Without the optional native
 libraries and voices, 6 of them are skipped (Whisper binding, TTS synthesis, playback). The step 2 suite

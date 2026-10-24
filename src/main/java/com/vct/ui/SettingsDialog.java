@@ -141,6 +141,7 @@ final class SettingsDialog {
         TextField translateKey = new TextField(s.translateHotkey());
         TextField replayKey = new TextField(s.replayHotkey());
         TextField pauseKey = new TextField(s.relay().pauseHotkey());
+        TextField liveKey = new TextField(s.relay().liveHotkey());
 
         // Translate my speech
         AppSettings.RelaySettings rs = s.relay();
@@ -200,6 +201,9 @@ final class SettingsDialog {
         row = field(g, row, "Translate latest", translateKey);
         row = field(g, row, "Replay", replayKey);
         row = field(g, row, "Pause my voice", pauseKey);
+        row = field(g, row, "Talk live (hold)", liveKey);
+        row = field(g, row, "", hint("While you hold it, your real voice goes into the voice chat, not translated: "
+                + "for when you speak English or Japanese yourself. Keep all of its keys held while you talk."));
         row = field(g, row, "", hint("For example Ctrl+Alt+T, Shift+F9 or F13. They work while a game has focus."));
         g.add(error, 0, row, 2, 1);
 
@@ -210,7 +214,7 @@ final class SettingsDialog {
 
         Node ok = d.getDialogPane().lookupButton(ButtonType.OK);
         ok.addEventFilter(ActionEvent.ACTION, e -> {
-            String problem = validate(translateKey.getText(), replayKey.getText(), pauseKey.getText(), languages.getText(),
+            String problem = validate(translateKey.getText(), replayKey.getText(), pauseKey.getText(), liveKey.getText(), languages.getText(),
                     nativeLanguage.getText(), model.getEditor().getText(), whisper.getText(), voice.getText());
             if (problem == null) problem = validateRelay(relayOn.isSelected(), relayVoice.getEditor().getText(), relayModel.getText());
             if (problem != null) {
@@ -227,7 +231,7 @@ final class SettingsDialog {
                     Hotkey.parse(replayKey.getText()).toString(), s.contextLines(),
                     new AppSettings.RelaySettings(relayOn.isSelected(), relayTarget.getValue().id(), relayOutput.getValue().id(),
                             relayModel.getText().strip(), relayVoice.getEditor().getText().strip(),
-                            Hotkey.parse(pauseKey.getText()).toString()));
+                            Hotkey.parse(pauseKey.getText()).toString(), Hotkey.parse(liveKey.getText()).toString()));
             String typed = key.getText().strip();
             return new Result(out, typed.isEmpty() ? Optional.empty() : Optional.of(typed), removeKey.isSelected() && typed.isEmpty());
         });
@@ -235,17 +239,15 @@ final class SettingsDialog {
     }
 
     /** Returns a user-readable problem, or null if everything is valid. */
-    static String validate(String translateKey, String replayKey, String pauseKey, String languages,
+    static String validate(String translateKey, String replayKey, String pauseKey, String liveKey, String languages,
                            String nativeLanguage, String model, String whisper, String voice) {
-        Hotkey t, r, p;
+        List<Hotkey> keys = new ArrayList<>();
         try {
-            t = Hotkey.parse(translateKey);
-            r = Hotkey.parse(replayKey);
-            p = Hotkey.parse(pauseKey);
+            for (String k : List.of(translateKey, replayKey, pauseKey, liveKey)) keys.add(Hotkey.parse(k));
         } catch (IllegalArgumentException e) {
             return "Hotkey: " + e.getMessage();
         }
-        if (t.equals(r) || t.equals(p) || r.equals(p)) return "The hotkeys must all be different.";
+        if (keys.stream().distinct().count() < keys.size()) return "The hotkeys must all be different.";
         if (splitLanguages(languages).isEmpty()) return "Enter at least one language to recognize.";
         if (nativeLanguage.isBlank()) return "Enter the language to translate into, e.g. zh.";
         if (model.isBlank()) return "Enter an OpenAI model, e.g. gpt-4.1-mini.";
