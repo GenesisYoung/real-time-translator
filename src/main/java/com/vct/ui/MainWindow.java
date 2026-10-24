@@ -12,12 +12,14 @@ import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
+import javafx.scene.control.IndexedCell;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.Tooltip;
+import javafx.scene.control.skin.VirtualFlow;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.BorderPane;
@@ -51,6 +53,9 @@ final class MainWindow implements SessionController.Listener {
         void openSettings();
 
         void translate(Utterance u, boolean force);
+
+        /** Pauses or resumes "translate my speech". */
+        void toggleRelay();
     }
 
     private static final int MAX_HISTORY = 300;
@@ -65,6 +70,12 @@ final class MainWindow implements SessionController.Listener {
     private final Label status = new Label("Stopped");
     private final Indicator mic = new Indicator("Mic");
     private final Indicator remote = new Indicator("Others");
+    private final Indicator relay = new Indicator("My voice: off");
+    private final Button relayButton = new Button("Pause my voice");
+    private String pauseKey = "";
+    private boolean relayPaused;
+    /** Keep showing the newest line; false while the user has scrolled up to read older ones. */
+    private boolean following = true;
     private final Label notice = new Label();
 
     MainWindow(Stage stage, Actions actions) {
@@ -78,22 +89,30 @@ final class MainWindow implements SessionController.Listener {
         cancel.setOnAction(e -> actions.cancel());
         cancel.setTooltip(new Tooltip("Stop the translation in progress and the voice"));
         settings.setOnAction(e -> actions.openSettings());
+        relayButton.setOnAction(e -> actions.toggleRelay());
+        relayButton.setDisable(true);
+        relayButton.setTooltip(new Tooltip("While paused, nothing you say is sent to the voice chat"));
         translate.setDisable(true);
         replay.setDisable(true);
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        HBox toolbar = new HBox(8, startStop, translate, replay, cancel, spacer, settings);
+        HBox toolbar = new HBox(8, startStop, translate, replay, cancel, relayButton, spacer, settings);
         toolbar.setAlignment(Pos.CENTER_LEFT);
 
         status.getStyleClass().add("status");
         Region gap = new Region();
         HBox.setHgrow(gap, Priority.ALWAYS);
-        HBox statusRow = new HBox(16, status, gap, mic.node, remote.node);
+        HBox statusRow = new HBox(16, status, gap, mic.node, remote.node, relay.node);
         statusRow.setAlignment(Pos.CENTER_LEFT);
 
         list.setPlaceholder(new Label("Recognized speech appears here.\nPress Start, then Translate (or the hotkey) after someone speaks."));
         list.setCellFactory(v -> new HistoryCell(actions));
+        // Only the user's own scrolling changes whether new lines are followed (like a chat window).
+        Runnable userScrolled = () -> Platform.runLater(() -> following = atBottom());
+        list.addEventFilter(javafx.scene.input.ScrollEvent.SCROLL, e -> userScrolled.run());
+        list.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_RELEASED, e -> userScrolled.run());
+        list.addEventFilter(javafx.scene.input.KeyEvent.KEY_RELEASED, e -> userScrolled.run());
         VBox.setVgrow(list, Priority.ALWAYS);
 
         notice.getStyleClass().add("notice");
@@ -103,7 +122,7 @@ final class MainWindow implements SessionController.Listener {
         BorderPane root = new BorderPane(list, top, null, notice, null);
         BorderPane.setMargin(list, new Insets(10, 0, 10, 0));
         root.setPadding(new Insets(12));
-        Scene scene = new Scene(root, 760, 560);
+        Scene scene = new Scene(root, 960, 600); // wide enough for all toolbar buttons with their hotkeys
         scene.getStylesheets().add(MainWindow.class.getResource("app.css").toExternalForm());
         stage.setScene(scene);
         stage.setTitle("Voice Chat Translator");
@@ -115,9 +134,15 @@ final class MainWindow implements SessionController.Listener {
         return stage;
     }
 
-    void setHotkeyHints(String translateKey, String replayKey) {
+    void setHotkeyHints(String translateKey, String replayKey, String pauseKey) {
         translate.setText("Translate latest  (" + translateKey + ")");
         replay.setText("Replay  (" + replayKey + ")");
+        this.pauseKey = pauseKey;
+        updateRelayButton();
+    }
+
+    private void updateRelayButton() {
+        relayButton.setText((relayPaused ? "Resume my voice" : "Pause my voice") + (pauseKey.isEmpty() ? "" : "  (" + pauseKey + ")"));
     }
 
     void setRemoteLabel(String label) {
@@ -157,11 +182,49 @@ final class MainWindow implements SessionController.Listener {
     }
 
     @Override
+    public void onRelayState(boolean active, boolean paused, String targetLanguage) {
+        runOnFx(() -> {
+            String lang = targetLanguage == null ? "" : java.util.Locale.forLanguageTag(targetLanguage).getDisplayLanguage(Locale.ENGLISH);
+            relay.name.setText(active ? "My voice → " + lang : "My voice: off");
+            relay.show(!active ? "off" : paused ? "warn" : "ok", !active ? "Translate my speech is off"
+                    : paused ? "Paused: nothing you say is sent" : "Everything you say is sent in " + lang);
+            relayButton.setDisable(!active);
+            relayPaused = paused;
+            updateRelayButton();
+        });
+    }
+
+    @Override
+    public void onRelayTranslation(Utterance u, TranslationResult r) {
+        runOnFx(() -> find(u).ifPresent(i -> {
+            i.translation.set(r.text());
+            i.note.set("sending to voice chat...");
+            if (following) followBottom(); // the cell grew by a line
+        }));
+    }
+
+    @Override
+    public void onRelaySent(Utterance u) {
+        runOnFx(() -> find(u).ifPresent(i -> i.note.set("sent to voice chat")));
+    }
+
+    @Override
+    public void onRelaySkipped(Utterance u, String reason) {
+        runOnFx(() -> find(u).ifPresent(i -> i.note.set(reason)));
+    }
+
+    @Override
+    public void onRelayError(Utterance u, String message) {
+        runOnFx(() -> find(u).ifPresent(i -> i.note.set("not sent")));
+        showNotice(message, true);
+    }
+
+    @Override
     public void onUtterance(Utterance u) {
         runOnFx(() -> {
             history.add(new HistoryItem(u));
             if (history.size() > MAX_HISTORY) history.removeFirst();
-            list.scrollTo(history.size() - 1);
+            if (following) followBottom();
         });
     }
 
@@ -176,7 +239,7 @@ final class MainWindow implements SessionController.Listener {
             i.translation.set(r.text());
             i.note.set(String.format(Locale.ROOT, "%s %s, %d ms%s", r.provider(), r.model(), r.latency().toMillis(),
                     r.fromCache() ? ", cached" : ""));
-            list.refresh();
+            if (following) followBottom(); // the cell grew by a line
         }));
     }
 
@@ -203,6 +266,26 @@ final class MainWindow implements SessionController.Listener {
     @Override
     public void onError(String message, Throwable cause) {
         showNotice(message, true);
+    }
+
+    /** True when the newest line is visible, i.e. the user is not reading older lines. */
+    private boolean atBottom() {
+        VirtualFlow<?> flow = (VirtualFlow<?>) list.lookup(".virtual-flow");
+        if (flow == null || history.isEmpty()) return true;
+        IndexedCell<?> last = flow.getLastVisibleCell();
+        return last == null || last.getIndex() >= history.size() - 1;
+    }
+
+    /**
+     * Shows the newest line, after the next layout pass so the cell has its real height.
+     * VirtualFlow.scrollTo scrolls only as far as needed; ListView.scrollTo puts the line at the top,
+     * which left the list scrolled past its end, showing only empty rows (seen in the preview).
+     */
+    private void followBottom() {
+        Platform.runLater(() -> {
+            VirtualFlow<?> flow = (VirtualFlow<?>) list.lookup(".virtual-flow");
+            if (flow != null && !history.isEmpty()) flow.scrollTo(history.size() - 1);
+        });
     }
 
     private java.util.Optional<HistoryItem> find(Utterance u) {
@@ -235,12 +318,17 @@ final class MainWindow implements SessionController.Listener {
         }
 
         void set(CaptureLoop.State state, String detail) {
-            dot.getStyleClass().setAll("dot", state == null ? "off" : switch (state) {
+            show(state == null ? "off" : switch (state) {
                 case RUNNING -> "ok";
                 case STARTING, RECONNECTING -> "warn";
                 case STOPPED -> "off";
-            });
-            tip.setText(state == null ? "Not running" : state + (detail == null ? "" : ": " + detail));
+            }, state == null ? "Not running" : state + (detail == null ? "" : ": " + detail));
+        }
+
+        /** @param style "ok", "warn" or "off" */
+        void show(String style, String tooltip) {
+            dot.getStyleClass().setAll("dot", style);
+            tip.setText(tooltip);
         }
     }
 

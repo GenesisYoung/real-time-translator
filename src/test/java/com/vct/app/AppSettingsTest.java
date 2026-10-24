@@ -26,7 +26,8 @@ class AppSettingsTest {
         Path f = dir.resolve("sub/settings.json");
         AppSettings s = new AppSettings(RemoteSource.DISCORD, "{0.0.1.00000000}.{abc}", "WH-CH520", "zh",
                 List.of("en", "ja"), "C:\\models\\w.bin", false, "voices/zh", 1.25, "gpt-4.1-mini",
-                "Ctrl+Shift+F9", "Alt+F10", 0);
+                "Ctrl+Shift+F9", "Alt+F10", 0,
+                new AppSettings.RelaySettings(true, "ja", "CABLE Input (VB-Audio Virtual Cable)", "tts-1", "nova", "Ctrl+Alt+M"));
         s.save(f);
         assertEquals(new AppSettings.Loaded(s, List.of()), AppSettings.load(f));
         assertFalse(Files.exists(dir.resolve("sub/settings.json.tmp")), "temporary file removed");
@@ -46,6 +47,28 @@ class AppSettingsTest {
         assertEquals("gpt-x", l.settings().openAiModel(), "valid values are kept");
         assertEquals(4, l.warnings().size(), l.warnings().toString());
         assertTrue(l.warnings().getFirst().startsWith("Setting \"remoteSource\" = \"discordm\" is invalid"), l.warnings().getFirst());
+    }
+
+    @Test
+    void relaySettingsFallBackPerValue(@TempDir Path dir) throws Exception {
+        Path f = Files.writeString(dir.resolve("settings.json"),
+                "{\"relay\":{\"enabled\":true,\"targetLanguage\":\"ja\",\"pauseHotkey\":\"M\"}}");
+        AppSettings.Loaded l = AppSettings.load(f);
+        AppSettings.RelaySettings r = l.settings().relay();
+        assertTrue(r.enabled());
+        assertEquals("ja", r.targetLanguage());
+        assertEquals(AppSettings.RelaySettings.defaults().pauseHotkey(), r.pauseHotkey());
+        assertEquals("CABLE Input", r.outputDevice(), "missing values keep their defaults");
+        assertEquals(1, l.warnings().size(), l.warnings().toString());
+        assertTrue(l.warnings().getFirst().startsWith("Setting \"relay.pauseHotkey\" = \"M\" is invalid"), l.warnings().getFirst());
+    }
+
+    @Test
+    void olderSettingsFilesWithoutRelayStillLoad(@TempDir Path dir) throws Exception {
+        Path f = Files.writeString(dir.resolve("settings.json"), "{\"openAiModel\":\"gpt-4.1-mini\"}");
+        AppSettings.Loaded l = AppSettings.load(f);
+        assertEquals(AppSettings.RelaySettings.defaults(), l.settings().relay());
+        assertTrue(l.warnings().isEmpty());
     }
 
     @Test

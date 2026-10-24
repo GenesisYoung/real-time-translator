@@ -152,7 +152,8 @@ public final class OpenAiProvider implements TranslationProvider {
         throw new TranslationException(Kind.BAD_RESPONSE, "no output text");
     }
 
-    private static String errorMessage(String body) {
+    /** The "error.message" of an OpenAI error response, or null. Also used by the speech API client. */
+    public static String errorMessage(String body) {
         try {
             if (Json.parseObject(body).get("error") instanceof Map<?, ?> err && err.get("message") instanceof String m) {
                 return m.length() > 300 ? m.substring(0, 300) + "…" : m;

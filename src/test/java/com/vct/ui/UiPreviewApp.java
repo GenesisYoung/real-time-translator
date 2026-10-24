@@ -31,7 +31,8 @@ public final class UiPreviewApp extends Application implements MainWindow.Action
     @Override
     public void start(Stage stage) {
         MainWindow w = new MainWindow(stage, this);
-        w.setHotkeyHints("Ctrl+Alt+T", "Ctrl+Alt+R");
+        w.setHotkeyHints("Ctrl+Alt+T", "Ctrl+Alt+R", "Ctrl+Alt+M");
+        w.onRelayState(true, false, "ja");
         w.setRemoteLabel("All audio except this app");
         w.onStatus(SessionController.Status.RUNNING, "Listening (All audio except this app)");
         w.onCaptureState(Source.MIC, CaptureLoop.State.RUNNING, "Default microphone");
@@ -41,15 +42,33 @@ public final class UiPreviewApp extends Application implements MainWindow.Action
         Utterance b = u("r-0002", Source.REMOTE, t.plusSeconds(9), "右の建物に敵が三人いるよ、気をつけて。", "ja", false);
         Utterance c = u("m-0001", Source.MIC, t.plusSeconds(15), "好的，我从左边绕过去。", "zh", false);
         Utterance d = u("r-0003", Source.REMOTE, t.plusSeconds(22), "Uh, maybe wait for the, uh...", "en", true);
-        for (Utterance x : List.of(a, b, c, d)) w.onUtterance(x);
-        w.onTranslation(a, new TranslationResult("我们应该一起推中路，他们只剩两个人了。", "openai", "gpt-4.1-mini", Duration.ofMillis(1376), false));
-        w.onTranslation(b, new TranslationResult("右边的建筑里有三个敌人，小心。", "openai", "gpt-4.1-mini", Duration.ofMillis(1612), false));
-        w.onTranslationStarted(d);
         w.showNotice("API key saved in Windows Credential Manager.", false);
         stage.show();
+        // As in the app: lines and translations arrive one by one after the window is shown.
+        List<Runnable> events = List.of(
+                () -> w.onUtterance(a),
+                () -> w.onTranslation(a, new TranslationResult("我们应该一起推中路，他们只剩两个人了。", "openai", "gpt-4.1-mini", Duration.ofMillis(1376), false)),
+                () -> w.onUtterance(b),
+                () -> w.onTranslation(b, new TranslationResult("右边的建筑里有三个敌人，小心。", "openai", "gpt-4.1-mini", Duration.ofMillis(1612), false)),
+                () -> w.onUtterance(c),
+                () -> w.onRelayTranslation(c, new TranslationResult("了解、左から回り込むね。", "openai", "gpt-4.1-mini", Duration.ofMillis(1200), false)),
+                () -> w.onRelaySent(c),
+                () -> w.onUtterance(d),
+                () -> w.onTranslationStarted(d));
+        for (int i = 0; i < events.size(); i++) after(100 + 60L * i, events.get(i));
 
-        Platform.runLater(() -> after(400, () -> {
+        Platform.runLater(() -> after(1200, () -> {
             save(stage.getScene(), "main-window.png");
+            // Then a long history: the list must follow the newest line without blank gaps.
+            for (int i = 0; i < 20; i++) {
+                int k = i;
+                Utterance x = u("r-1" + k, Source.REMOTE, t.plusSeconds(40 + 5L * k), "Line " + (k + 1) + ": enemy spotted near the bridge.", "en", false);
+                after(50L * k, () -> w.onUtterance(x));
+                after(50L * k + 25, () -> w.onTranslation(x, new TranslationResult("第" + (k + 1) + "句：桥附近发现敌人。", "openai", "gpt-4.1-mini", Duration.ofMillis(900), false)));
+            }
+        }));
+        Platform.runLater(() -> after(2600, () -> {
+            save(stage.getScene(), "main-window-long.png");
             Platform.runLater(() -> after(600, () -> {
                 // The dialog runs a nested event loop; this snapshot runs inside it.
                 Window dialog = Window.getWindows().stream().filter(x -> x != stage).findFirst().orElseThrow();
@@ -98,4 +117,5 @@ public final class UiPreviewApp extends Application implements MainWindow.Action
     @Override public void cancel() {}
     @Override public void openSettings() {}
     @Override public void translate(Utterance u, boolean force) {}
+    @Override public void toggleRelay() {}
 }
