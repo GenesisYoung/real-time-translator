@@ -50,7 +50,7 @@ import java.util.concurrent.CompletionException;
  *     Whisper on a WAV file (16-bit PCM). Prints text, language, confidence and timings.
  * gradlew speechCheck --args="say 我们应该往左走。"
  *     Speaks a sentence with the TTS voice on the default output.
- * gradlew speechCheck --args="live --openai-model NAME --remote others"
+ * gradlew --console=plain speechCheck --args="live --openai-model gpt-4.1-mini --remote others"
  *     The whole pipeline: capture, VAD, Whisper, and on Enter: translate the latest remote line
  *     to Chinese with OpenAI (key from OPENAI_API_KEY) and speak it.
  *
@@ -137,6 +137,11 @@ public final class SpeechCheck {
             }
         }
         String argument = String.join(" ", positional);
+        if (mode.equals("live") && !argument.isEmpty()) {
+            // e.g. a placeholder typed literally: --openai-model <name from the list>
+            throw new IllegalArgumentException("Unexpected text \"" + argument + "\". Give option values without"
+                    + " < >, for example: --openai-model gpt-4.1-mini");
+        }
         if (!mode.equals("live") && argument.isBlank()) {
             throw new IllegalArgumentException(mode.equals("say") ? "Give the text to speak." : "Give the WAV file to transcribe.");
         }

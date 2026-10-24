@@ -125,13 +125,17 @@ in well under a second. Run 1 is slower because the GPU warms up.
 .\gradlew speechCheck --args="say 我们应该往左走。"
 ```
 
-**d. Everything together.** Set your OpenAI key for this terminal, then start without a model to list the models you can use:
+**d. Everything together.** Set your OpenAI key for this terminal only, then start:
 
 ```powershell
 $env:OPENAI_API_KEY = "sk-..."
-.\gradlew speechCheck --args="live --remote others"
-.\gradlew speechCheck --args="live --remote others --openai-model <name from the list>"
+.\gradlew --console=plain speechCheck --args="live --remote others --openai-model gpt-4.1-mini"
 ```
+
+- **Never show the key** in a screenshot or share it: anyone who has it can use your account.
+- `gpt-4.1-mini` is fast and doesn't reason before answering. Leave out `--openai-model` to list
+  every model your key can use.
+- `--console=plain` keeps Gradle's progress bar out of the output.
 
 Play a video or join voice chat. Each recognized line appears with its language. Press **Enter** to
 translate the latest remote line into Chinese and hear it. **r** + Enter replays it, and **q** + Enter quits.

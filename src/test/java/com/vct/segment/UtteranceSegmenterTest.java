@@ -62,6 +62,27 @@ class UtteranceSegmenterTest {
     }
 
     @Test
+    void longUtteranceEndsAtAShorterPause() {
+        // Fluent speakers rarely pause 700 ms; found on Windows: every line ran to the 15 s maximum.
+        var s = new UtteranceSegmenter(UtteranceSegmenter.Config.defaults(), out::add);
+        feed(s, 0.9f, 200);  // 6.4 s speech: past the 6 s soft limit
+        feed(s, 0.1f, 10);   // 320 ms pause >= 300 ms
+        assertEquals(1, out.size());
+        assertFalse(out.getFirst().forcedSplit(), "cut at the pause, not forced");
+        assertFalse(s.isInSpeech());
+    }
+
+    @Test
+    void shortUtteranceKeepsTheLongPauseRule() {
+        var s = new UtteranceSegmenter(UtteranceSegmenter.Config.defaults(), out::add);
+        feed(s, 0.9f, 100);  // 3.2 s: below the soft limit
+        feed(s, 0.1f, 10);   // 320 ms pause is just a breath here
+        feed(s, 0.9f, 20);
+        assertTrue(out.isEmpty());
+        assertTrue(s.isInSpeech());
+    }
+
+    @Test
     void longMonologueIsForceSplitAndContinues() {
         var cfg = UtteranceSegmenter.Config.defaults().withMaxUtteranceMs(2_000);
         var s = new UtteranceSegmenter(cfg, out::add);
