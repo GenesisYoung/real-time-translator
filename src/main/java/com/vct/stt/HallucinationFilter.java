@@ -14,7 +14,13 @@ public final class HallucinationFilter {
             "thank you", "thanks for watching", "thank you for watching",
             "please subscribe", "subscribe to my channel", "you",
             "untertitel im auftrag des zdf", "sous-titres réalisés par la communauté d'amara.org",
-            "amara.org");
+            "amara.org",
+            // Japanese
+            "ご視聴ありがとうございました", "ご視聴ありがとうございます", "最後までご視聴いただきありがとうございました",
+            "チャンネル登録よろしくお願いします", "チャンネル登録をお願いします",
+            // Chinese
+            "请不吝点赞 订阅 转发 打赏支持明镜与点点栏目", "字幕由amara.org社区提供", "谢谢观看", "感谢观看",
+            "谢谢大家", "请订阅我的频道");
 
     private final double maxNoSpeechProbability;
     private final double minConfidence;
@@ -42,7 +48,8 @@ public final class HallucinationFilter {
 
     static String normalize(String text) {
         String s = Normalizer.normalize(text, Normalizer.Form.NFKC).toLowerCase(Locale.ROOT).trim();
-        s = s.replaceAll("[\\p{Punct}&&[^'.-]]", " ").replaceAll("\\s+", " ").trim();
+        // Unicode punctuation, not just ASCII \p{Punct}: Japanese and Chinese use 。、「」 etc.
+        s = s.replaceAll("[\\p{IsPunctuation}&&[^'.-]]", " ").replaceAll("\\s+", " ").trim();
         while (s.endsWith(".")) s = s.substring(0, s.length() - 1).trim();
         return s;
     }

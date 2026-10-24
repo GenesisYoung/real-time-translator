@@ -5,3 +5,4 @@ build/
 /transcripts/
 .vs/
 .vscode/
+/native/sherpa-onnx/
