@@ -35,8 +35,12 @@ the app would hear its own translations, so it refuses to start translate-my-spe
 
 - **Input Device**: **CABLE Output (VB-Audio Virtual Cable)**
 - **Output Device**: your headphones (unchanged)
-- **Noise Suppression**: **None** for this input. Noise filters can cut parts of a synthetic voice.
-- Use **Let's Check** on the same page to hear what the others will hear.
+- **Input Profile**: **Studio** (in older Discord versions: Noise Suppression **None**). Voice Isolation
+  and other noise filters can cut parts of a synthetic voice.
+- Use **Let's Check** on the same page to hear what the others will hear. The meter only moves while
+  the app is speaking a translation: start a session in the app and say something.
+
+Newer VB-CABLE versions also add **CABLE In 16ch**. Don't use it: choose **CABLE Input** in the app.
 
 ## 4. The app
 
