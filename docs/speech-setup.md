@@ -30,7 +30,9 @@ Whisper uses your RTX 4060 Ti through CUDA. Building the CUDA code requires NVID
 
 1. Download the latest version for **Windows x86_64** from https://developer.nvidia.com/cuda-downloads.
 2. Install it **after** Visual Studio, with the default components. The installer adds
-   **Visual Studio Integration** only for Visual Studio versions it finds.
+   **Visual Studio Integration** only for Visual Studio versions it finds. Visual Studio 2026 (its
+   folder is `Microsoft Visual Studio\18`) needs a recent CUDA release that lists VS 2026 support,
+   so take the newest one.
 3. Check it in a **new** terminal: `nvcc --version` prints the version.
 
 The installer also puts the CUDA runtime DLLs on `PATH`, and `vct_stt.dll` needs them when it runs.
