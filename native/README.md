@@ -36,6 +36,16 @@ $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 & "$vs\Common7\Tools\Launch-VsDevShell.ps1" -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
 ```
 
+Skip this if `cmake --version` already works: the terminal is a Developer PowerShell already.
+
+If the second line fails with *"running scripts is disabled on this system"*, PowerShell's execution
+policy blocks `.ps1` files. Allow them for **this terminal only** (it resets when the window closes),
+then run the two lines again:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```
+
 PowerShell also does not run programs from the current folder by name, so type `.\gradlew`
 instead of `gradlew`:
 
