@@ -120,7 +120,7 @@ class SessionControllerTest {
 
         AppSettings other = new AppSettings(s.remoteSource(), s.micDeviceId(), s.outputDevice(), s.nativeLanguage(),
                 s.recognizedLanguages(), "models/whisper/other.bin", s.whisperGpu(), s.ttsVoice(), s.ttsSpeed(),
-                s.openAiModel(), s.translateHotkey(), s.replayHotkey(), s.contextLines(), s.relay(), s.subtitles());
+                s.openAiModel(), s.translateHotkey(), s.replayHotkey(), s.contextLines(), s.relay(), s.subtitles(), s.listenOnStart());
         c.start(other).get(5, TimeUnit.SECONDS);
         assertEquals(2, engines.recognizersOpened.get());
         assertEquals(1, engines.recognizersClosed.get(), "the replaced recognizer was freed");
@@ -145,7 +145,7 @@ class SessionControllerTest {
                 d.recognizedLanguages(), d.whisperModel(), d.whisperGpu(), d.ttsVoice(), d.ttsSpeed(), d.openAiModel(),
                 d.translateHotkey(), d.replayHotkey(), d.contextLines(),
                 new AppSettings.RelaySettings(on, "ja", r.outputDevice(), r.ttsModel(), r.voice(), r.pauseHotkey(), r.liveHotkey()),
-                d.subtitles());
+                d.subtitles(), d.listenOnStart());
     }
 
     @Test

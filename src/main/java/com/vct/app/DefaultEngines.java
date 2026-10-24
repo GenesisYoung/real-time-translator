@@ -15,6 +15,7 @@ import com.vct.translate.TranslationProvider;
 import com.vct.tts.OpenAiTts;
 import com.vct.tts.SherpaTts;
 import com.vct.tts.TtsEngine;
+import com.vct.util.AppHome;
 
 import java.net.http.HttpClient;
 import java.nio.file.Path;
@@ -44,12 +45,12 @@ public final class DefaultEngines implements SessionController.Engines {
 
     @Override
     public SpeechRecognizer recognizer(AppSettings s) throws Exception {
-        return WhisperRecognizer.open(Path.of(s.whisperModel()), s.whisperGpu());
+        return WhisperRecognizer.open(AppHome.resolve(s.whisperModel()), s.whisperGpu());
     }
 
     @Override
     public TtsEngine tts(AppSettings s) throws Exception {
-        return SherpaTts.load(Path.of(s.ttsVoice()));
+        return SherpaTts.load(AppHome.resolve(s.ttsVoice()));
     }
 
     @Override
@@ -84,9 +85,10 @@ public final class DefaultEngines implements SessionController.Engines {
         return s.remoteSource().resolver();
     }
 
+    /** Next to the settings in the installed app (its own folder may not be writable); else ./transcripts. */
     @Override
     public Path transcriptDir() {
-        return Path.of("transcripts");
+        return AppHome.installed() ? AppSettings.defaultFile().getParent().resolve("transcripts") : Path.of("transcripts");
     }
 
     @Override

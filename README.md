@@ -3,7 +3,7 @@
 On-demand voice-chat translation for Windows 11 (personal use). Speech recognition, VAD and
 TTS run locally; only the text of an utterance you explicitly ask to translate is sent to OpenAI.
 
-## Status: Phase 3 (subtitles over the game)
+## Status: Phase 4 (installable Windows app)
 
 | Component | State |
 |---|---|
@@ -32,9 +32,10 @@ TTS run locally; only the text of an utterance you explicitly ask to translate i
 | Translate my speech: automatic, English or Japanese, into VB-CABLE (`SpeechRelay`, OpenAI speech) | Works on Windows with Discord (setup: [docs/translate-my-speech.md](docs/translate-my-speech.md)) |
 | Talk live: hold Ctrl+Alt+V to send your real voice with no delay (`LiveVoice`, held hotkeys) | Works on Windows with Discord |
 | Lower delay for translate my speech: streamed OpenAI voice, 450 ms end of line, warm connection | Implemented, unit-tested. **Not yet measured on Windows** |
-| Subtitles over the game: others' lines translated automatically into a click-through overlay (`SubtitleOverlay`) | Implemented, unit-tested, rendered in the UI preview. **Not yet run on Windows** (see [docs/subtitles.md](docs/subtitles.md)) |
+| Subtitles over the game: others' lines translated automatically into a click-through overlay (`SubtitleOverlay`) | Works on Windows over windowed and borderless programs (see [docs/subtitles.md](docs/subtitles.md)) |
+| Installable app: `gradlew packageApp` / `packageInstaller` (jpackage), icon, one copy only, start with Windows, log file | Built and started as a Linux program folder here. **Not yet built on Windows** (see [docs/install.md](docs/install.md)) |
 
-145 tests, all passing on JDK 25 (Linux x64). Without the optional native
+152 tests, all passing on JDK 25 (Linux x64). Without the optional native
 libraries, voices and Windows, 9 of them are skipped (Whisper binding, TTS synthesis, playback). The step 2 suite
 (66 tests) also passed on Windows 11.
 
@@ -51,7 +52,9 @@ gradlew.bat test        # Windows
 
 ## Run the app
 
-After the setup in [docs/speech-setup.md](docs/speech-setup.md):
+To install it as a normal Windows program (Start menu, start with Windows), see
+[docs/install.md](docs/install.md). To run it from the repository, after the setup in
+[docs/speech-setup.md](docs/speech-setup.md):
 
 ```
 gradlew.bat run

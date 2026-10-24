@@ -4,7 +4,8 @@ plugins {
 }
 
 group = "com.vct"
-version = "0.1.0-phase1"
+// Plain numbers: Windows installers (MSI) accept only major.minor.build.
+version = "0.4.0"
 
 repositories {
     mavenLocal()
@@ -134,4 +135,89 @@ tasks.register<JavaExec>("uiPreview") {
     classpath = sourceSets.test.get().runtimeClasspath
     mainClass = "com.vct.ui.UiPreview"
     jvmArgs("--enable-native-access=ALL-UNNAMED")
+}
+
+// ---------------------------------------------------------------------------------------------
+// The installed app (see docs/install.md). jpackage, part of the JDK, builds a program for the
+// system it runs on: run these on Windows for a Windows program.
+//   gradlew packageApp         build\jpackage\image\VoiceChatTranslator\VoiceChatTranslator.exe
+//   gradlew packageInstaller   build\jpackage\installer\VoiceChatTranslator-<version>.msi (needs WiX)
+// -PnoModels leaves models\ out (about 1 GB); the settings must then point to them.
+
+val appName = "VoiceChatTranslator"
+val isWindows = System.getProperty("os.name").startsWith("Windows")
+val jpackageRoot = layout.buildDirectory.dir("jpackage")
+val iconFile = jpackageRoot.map { it.file(if (isWindows) "$appName.ico" else "$appName.png") }
+val jpackageTool = File(System.getProperty("java.home"), "bin/" + if (isWindows) "jpackage.exe" else "jpackage")
+
+val writeIcon = tasks.register<JavaExec>("writeIcon") {
+    description = "Draws the program icon for jpackage."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass = "com.vct.ui.AppIcon"
+    args(iconFile.get().asFile.path)
+    outputs.file(iconFile)
+}
+
+// Everything the app needs, laid out as in the repository, so the same relative paths work:
+// jars, native\..., models\... The launcher passes this folder as -Dvct.home.
+val jpackageInput = tasks.register<Sync>("jpackageInput") {
+    description = "Collects the jars, native libraries and models for jpackage."
+    into(jpackageRoot.map { it.dir("input") })
+    from(tasks.jar)
+    from(configurations.runtimeClasspath)
+    from("native/build/Release") { include("vct_audio.dll"); into("native") }
+    from("native/stt/build/Release") { include("*.dll"); into("native/stt/build/Release") }
+    from("native/sherpa-onnx") { include("*.dll", "*.so*", "*.dylib"); into("native/sherpa-onnx") }
+    if (!providers.gradleProperty("noModels").isPresent) from("models") { into("models") }
+    doFirst {
+        if (isWindows) {
+            val missing = listOf("native/build/Release/vct_audio.dll", "native/stt/build/Release/vct_stt.dll",
+                "native/sherpa-onnx/sherpa-onnx-c-api.dll").filter { !file(it).isFile }
+            if (missing.isNotEmpty()) throw GradleException("Build or download these first (docs/speech-setup.md): $missing")
+        }
+    }
+}
+
+val packageApp = tasks.register<Exec>("packageApp") {
+    group = "distribution"
+    description = "Builds the program folder with its own Java runtime (jpackage --type app-image)."
+    dependsOn(jpackageInput, writeIcon)
+    val dest = jpackageRoot.map { it.dir("image") }
+    inputs.dir(jpackageInput.map { it.destinationDir })
+    outputs.dir(dest)
+    doFirst { delete(dest) } // jpackage refuses to overwrite
+    commandLine(jpackageTool.path, "--type", "app-image",
+        "--name", appName, "--app-version", version.toString(),
+        "--vendor", "Voice Chat Translator", "--description", "Voice chat translation for Windows",
+        "--input", jpackageInput.get().destinationDir.path,
+        "--main-jar", tasks.jar.get().archiveFileName.get(), "--main-class", application.mainClass.get(),
+        // $APPDIR is the folder with the jars; jpackage fills it in when the program starts.
+        "--java-options", "--enable-native-access=ALL-UNNAMED",
+        "--java-options", "-Dvct.home=\$APPDIR",
+        "--java-options", "-Dfile.encoding=UTF-8",
+        "--icon", iconFile.get().asFile.path,
+        // Only the Java modules the app uses (found with jdeps; JavaFX adds jdk.unsupported and
+        // java.xml): about half the size of a full runtime.
+        "--add-modules", "java.base,java.desktop,java.logging,java.net.http,java.xml,jdk.unsupported,jdk.jfr",
+        "--jlink-options", "--strip-debug --no-man-pages --no-header-files",
+        "--dest", dest.get().asFile.path)
+}
+
+tasks.register<Exec>("packageInstaller") {
+    group = "distribution"
+    description = "Builds a Windows installer from the program folder (jpackage --type msi; needs WiX)."
+    dependsOn(packageApp)
+    onlyIf { isWindows }
+    val dest = jpackageRoot.map { it.dir("installer") }
+    outputs.dir(dest)
+    doFirst { delete(dest) }
+    commandLine(jpackageTool.path, "--type", "msi",
+        "--app-image", jpackageRoot.get().dir("image/$appName").asFile.path,
+        "--name", appName, "--app-version", version.toString(),
+        "--vendor", "Voice Chat Translator", "--description", "Voice chat translation for Windows",
+        // For this user only: no administrator rights needed, installed under %LOCALAPPDATA%.
+        "--win-per-user-install", "--win-menu", "--win-menu-group", "Voice Chat Translator", "--win-shortcut",
+        // Fixed, so a newer installer replaces the installed version instead of adding a second one.
+        "--win-upgrade-uuid", "6f1d3c2a-8a51-4b7e-9d0c-3e2b9f6a4c71",
+        "--dest", dest.get().asFile.path)
 }

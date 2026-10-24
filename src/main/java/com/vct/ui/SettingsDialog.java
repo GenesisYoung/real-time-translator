@@ -41,8 +41,9 @@ final class SettingsDialog {
     /**
      * @param newApiKey a key typed in the dialog, to save in Credential Manager
      * @param removeKey the user asked to delete the saved key
+     * @param startWithWindows the "start with Windows" choice (kept by Windows, not in the settings file)
      */
-    record Result(AppSettings settings, Optional<String> newApiKey, boolean removeKey) {}
+    record Result(AppSettings settings, Optional<String> newApiKey, boolean removeKey, boolean startWithWindows) {}
 
     /** A device choice; {@code id} null is "Windows default". */
     private record Choice(String id, String label) {
@@ -186,6 +187,13 @@ final class SettingsDialog {
         TextField relayModel = new TextField(rs.ttsModel());
         for (Node n : List.of(relayTarget, relayOutput, relayVoice, relayModel)) n.disableProperty().bind(relayOn.selectedProperty().not());
 
+        // Program
+        CheckBox withWindows = new CheckBox("Start with Windows (in the tray)");
+        withWindows.setSelected(WindowsStartup.isOn());
+        withWindows.setDisable(!WindowsStartup.available());
+        CheckBox listenOnStart = new CheckBox("Start listening as soon as the app opens");
+        listenOnStart.setSelected(s.listenOnStart());
+
         Label error = new Label();
         error.getStyleClass().add("error-text");
         error.setWrapText(true);
@@ -232,6 +240,11 @@ final class SettingsDialog {
                 + "Voice & Video > Input Device) to \"CABLE Output\". Others then hear only the translation."));
         row = field(g, row, "OpenAI voice", wide(relayVoice));
         row = field(g, row, "OpenAI speech model", relayModel);
+        row = section(g, row, "Program");
+        row = field(g, row, "", withWindows);
+        if (!WindowsStartup.available()) row = field(g, row, "", hint("Only in the installed app (see docs/install.md)."));
+        row = field(g, row, "", listenOnStart);
+        row = field(g, row, "", hint("Loads the speech engines and starts the session without pressing Start."));
         row = section(g, row, "Hotkeys");
         row = field(g, row, "Translate latest", translateKey);
         row = field(g, row, "Replay", replayKey);
@@ -272,9 +285,11 @@ final class SettingsDialog {
                     new AppSettings.SubtitleSettings(subtitlesOn.isSelected(), subtitlesSpeak.isSelected(),
                             Math.round(fontSize.getValue()), subtitlesOriginal.isSelected(), (int) Math.round(hold.getValue()),
                             resetPosition.isSelected() ? null : st.x(), resetPosition.isSelected() ? null : st.y(),
-                            Hotkey.parse(subtitlesKey.getText()).toString()));
+                            Hotkey.parse(subtitlesKey.getText()).toString()),
+                    listenOnStart.isSelected());
             String typed = key.getText().strip();
-            return new Result(out, typed.isEmpty() ? Optional.empty() : Optional.of(typed), removeKey.isSelected() && typed.isEmpty());
+            return new Result(out, typed.isEmpty() ? Optional.empty() : Optional.of(typed), removeKey.isSelected() && typed.isEmpty(),
+                    withWindows.isSelected());
         });
         return d.showAndWait();
     }
@@ -324,7 +339,7 @@ final class SettingsDialog {
     private static Node browse(TextField field, boolean directory, String title) {
         Button b = new Button("Browse...");
         b.setOnAction(e -> {
-            File start = new File(field.getText()).getAbsoluteFile();
+            File start = com.vct.util.AppHome.resolve(field.getText().isBlank() ? "." : field.getText()).toFile();
             File chosen;
             if (directory) {
                 DirectoryChooser c = new DirectoryChooser();

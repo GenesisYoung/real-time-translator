@@ -1,5 +1,6 @@
 package com.vct.capture;
 
+import com.vct.util.AppHome;
 import com.vct.util.Json;
 
 import java.lang.foreign.Arena;
@@ -65,13 +66,13 @@ public final class WasapiBackend implements CaptureBackend {
 
     /**
      * Loads the library from {@code -Dvct.audio.lib=<file>}, else {@code native/vct_audio.dll} or
-     * {@code vct_audio.dll} in the working directory, else from the system library path.
+     * {@code vct_audio.dll} in the {@link AppHome app folder}, else from the system library path.
      */
     public static WasapiBackend load() throws CaptureException {
         String configured = System.getProperty(LIBRARY_PROPERTY);
         if (configured != null) return load(Path.of(configured));
         String file = System.mapLibraryName("vct_audio");
-        for (Path p : List.of(Path.of("native", file), Path.of(file))) {
+        for (Path p : List.of(AppHome.resolve("native", file), AppHome.resolve(file))) {
             if (Files.isRegularFile(p)) return load(p);
         }
         try {
