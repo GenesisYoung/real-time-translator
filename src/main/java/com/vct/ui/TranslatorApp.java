@@ -113,6 +113,11 @@ public final class TranslatorApp extends Application implements MainWindow.Actio
     }
 
     @Override
+    public void toggleRelay() {
+        controller.toggleRelayPaused();
+    }
+
+    @Override
     public void translate(Utterance u, boolean force) {
         controller.translate(u, force); // problems arrive as notices and errors
     }
@@ -168,7 +173,7 @@ public final class TranslatorApp extends Application implements MainWindow.Actio
     }
 
     private void applySettingsToUi() {
-        window.setHotkeyHints(settings.translateHotkey(), settings.replayHotkey());
+        window.setHotkeyHints(settings.translateHotkey(), settings.replayHotkey(), settings.relay().pauseHotkey());
         window.setRemoteLabel(settings.remoteSource().label());
     }
 
@@ -180,6 +185,7 @@ public final class TranslatorApp extends Application implements MainWindow.Actio
         Map<Hotkey, Runnable> bindings = new LinkedHashMap<>();
         bindings.put(Hotkey.parse(settings.translateHotkey()), controller::translateLatest);
         bindings.put(Hotkey.parse(settings.replayHotkey()), controller::replay);
+        bindings.put(Hotkey.parse(settings.relay().pauseHotkey()), controller::toggleRelayPaused);
         try {
             hotkeys = new GlobalHotkeys(bindings);
             return hotkeys.problems();

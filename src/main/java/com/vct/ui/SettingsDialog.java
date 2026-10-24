@@ -140,6 +140,26 @@ final class SettingsDialog {
         // Hotkeys
         TextField translateKey = new TextField(s.translateHotkey());
         TextField replayKey = new TextField(s.replayHotkey());
+        TextField pauseKey = new TextField(s.relay().pauseHotkey());
+
+        // Translate my speech
+        AppSettings.RelaySettings rs = s.relay();
+        CheckBox relayOn = new CheckBox("Translate everything I say and speak it into the voice chat");
+        relayOn.setSelected(rs.enabled());
+        ComboBox<Choice> relayTarget = new ComboBox<>();
+        relayTarget.getItems().setAll(new Choice("en", "English"), new Choice("ja", "Japanese"));
+        relayTarget.setValue(relayTarget.getItems().stream().filter(c -> c.id().equals(rs.targetLanguage())).findFirst()
+                .orElse(relayTarget.getItems().getFirst()));
+        ComboBox<Choice> relayOutput = new ComboBox<>();
+        relayOutput.getItems().add(DEFAULT_OUTPUT);
+        outputs.forEach(o -> relayOutput.getItems().add(new Choice(o, o)));
+        relayOutput.setValue(matchOutput(relayOutput, rs.outputDevice()));
+        ComboBox<String> relayVoice = new ComboBox<>();
+        relayVoice.setEditable(true);
+        relayVoice.getItems().setAll("alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer", "verse");
+        relayVoice.setValue(rs.voice());
+        TextField relayModel = new TextField(rs.ttsModel());
+        for (Node n : List.of(relayTarget, relayOutput, relayVoice, relayModel)) n.disableProperty().bind(relayOn.selectedProperty().not());
 
         Label error = new Label();
         error.getStyleClass().add("error-text");
@@ -168,9 +188,18 @@ final class SettingsDialog {
         row = field(g, row, "", gpu);
         row = field(g, row, "Voice folder", browse(voice, true, "Choose the voice folder"));
         row = field(g, row, "Speech speed", new HBox(10, grown(speed), speedValue));
+        row = section(g, row, "Translate my speech");
+        row = field(g, row, "", relayOn);
+        row = field(g, row, "Others hear", wide(relayTarget));
+        row = field(g, row, "Send it to", wide(relayOutput));
+        row = field(g, row, "", hint("Choose \"CABLE Input\" and set the voice chat's microphone (in Discord: Settings > "
+                + "Voice & Video > Input Device) to \"CABLE Output\". Others then hear only the translation."));
+        row = field(g, row, "OpenAI voice", wide(relayVoice));
+        row = field(g, row, "OpenAI speech model", relayModel);
         row = section(g, row, "Hotkeys");
         row = field(g, row, "Translate latest", translateKey);
         row = field(g, row, "Replay", replayKey);
+        row = field(g, row, "Pause my voice", pauseKey);
         row = field(g, row, "", hint("For example Ctrl+Alt+T, Shift+F9 or F13. They work while a game has focus."));
         g.add(error, 0, row, 2, 1);
 
@@ -181,8 +210,9 @@ final class SettingsDialog {
 
         Node ok = d.getDialogPane().lookupButton(ButtonType.OK);
         ok.addEventFilter(ActionEvent.ACTION, e -> {
-            String problem = validate(translateKey.getText(), replayKey.getText(), languages.getText(),
+            String problem = validate(translateKey.getText(), replayKey.getText(), pauseKey.getText(), languages.getText(),
                     nativeLanguage.getText(), model.getEditor().getText(), whisper.getText(), voice.getText());
+            if (problem == null) problem = validateRelay(relayOn.isSelected(), relayVoice.getEditor().getText(), relayModel.getText());
             if (problem != null) {
                 error.setText(problem);
                 e.consume(); // keep the dialog open
@@ -194,7 +224,10 @@ final class SettingsDialog {
                     nativeLanguage.getText().strip(), splitLanguages(languages.getText()), whisper.getText().strip(),
                     gpu.isSelected(), voice.getText().strip(), Math.round(speed.getValue() * 100) / 100.0,
                     model.getEditor().getText().strip(), Hotkey.parse(translateKey.getText()).toString(),
-                    Hotkey.parse(replayKey.getText()).toString(), s.contextLines());
+                    Hotkey.parse(replayKey.getText()).toString(), s.contextLines(),
+                    new AppSettings.RelaySettings(relayOn.isSelected(), relayTarget.getValue().id(), relayOutput.getValue().id(),
+                            relayModel.getText().strip(), relayVoice.getEditor().getText().strip(),
+                            Hotkey.parse(pauseKey.getText()).toString()));
             String typed = key.getText().strip();
             return new Result(out, typed.isEmpty() ? Optional.empty() : Optional.of(typed), removeKey.isSelected() && typed.isEmpty());
         });
@@ -202,21 +235,41 @@ final class SettingsDialog {
     }
 
     /** Returns a user-readable problem, or null if everything is valid. */
-    static String validate(String translateKey, String replayKey, String languages, String nativeLanguage,
-                           String model, String whisper, String voice) {
-        Hotkey t, r;
+    static String validate(String translateKey, String replayKey, String pauseKey, String languages,
+                           String nativeLanguage, String model, String whisper, String voice) {
+        Hotkey t, r, p;
         try {
             t = Hotkey.parse(translateKey);
             r = Hotkey.parse(replayKey);
+            p = Hotkey.parse(pauseKey);
         } catch (IllegalArgumentException e) {
             return "Hotkey: " + e.getMessage();
         }
-        if (t.equals(r)) return "The two hotkeys must be different.";
+        if (t.equals(r) || t.equals(p) || r.equals(p)) return "The hotkeys must all be different.";
         if (splitLanguages(languages).isEmpty()) return "Enter at least one language to recognize.";
         if (nativeLanguage.isBlank()) return "Enter the language to translate into, e.g. zh.";
         if (model.isBlank()) return "Enter an OpenAI model, e.g. gpt-4.1-mini.";
         if (whisper.isBlank() || voice.isBlank()) return "Enter the Whisper model file and the voice folder.";
         return null;
+    }
+
+    static String validateRelay(boolean on, String voice, String model) {
+        if (!on) return null;
+        if (voice.isBlank()) return "Choose an OpenAI voice for Translate my speech, e.g. alloy.";
+        if (model.isBlank()) return "Enter an OpenAI speech model, e.g. gpt-4o-mini-tts.";
+        return null;
+    }
+
+    /** The device whose name contains {@code wanted}; if none does, an entry saying it is missing. */
+    private static Choice matchOutput(ComboBox<Choice> box, String wanted) {
+        if (wanted == null) return DEFAULT_OUTPUT;
+        String w = wanted.toLowerCase(Locale.ROOT);
+        return box.getItems().stream().filter(c -> c.id() != null && c.id().toLowerCase(Locale.ROOT).contains(w))
+                .findFirst().orElseGet(() -> {
+                    Choice missing = new Choice(wanted, wanted + "  (not found: is VB-CABLE installed?)");
+                    box.getItems().add(missing);
+                    return missing;
+                });
     }
 
     static List<String> splitLanguages(String text) {

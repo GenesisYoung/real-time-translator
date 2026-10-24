@@ -12,6 +12,7 @@ import com.vct.stt.SpeechRecognizer;
 import com.vct.stt.WhisperRecognizer;
 import com.vct.translate.OpenAiProvider;
 import com.vct.translate.TranslationProvider;
+import com.vct.tts.OpenAiTts;
 import com.vct.tts.SherpaTts;
 import com.vct.tts.TtsEngine;
 
@@ -59,6 +60,18 @@ public final class DefaultEngines implements SessionController.Engines {
     @Override
     public TranslationProvider translator(AppSettings s, Supplier<String> apiKey) {
         return new OpenAiProvider(http, OpenAiProvider.DEFAULT_BASE_URL, apiKey, s.openAiModel(), Duration.ofSeconds(10), 400);
+    }
+
+    @Override
+    public TtsEngine relayTts(AppSettings s, Supplier<String> apiKey) {
+        return new OpenAiTts(http, OpenAiProvider.DEFAULT_BASE_URL, apiKey, s.relay().ttsModel(), s.relay().voice(),
+                Duration.ofSeconds(15));
+    }
+
+    @Override
+    public AudioSink relaySink(AppSettings s) {
+        String device = s.relay().outputDevice();
+        return device == null ? new JavaSoundSink() : new JavaSoundSink(device);
     }
 
     @Override

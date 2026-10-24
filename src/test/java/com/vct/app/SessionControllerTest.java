@@ -52,6 +52,7 @@ class SessionControllerTest {
     private final List<Utterance> heard = new CopyOnWriteArrayList<>();
     private final List<TranslationResult> translated = new CopyOnWriteArrayList<>();
     private final List<AudioClip> played = new CopyOnWriteArrayList<>();
+    private final List<String> sentToVoiceChat = new CopyOnWriteArrayList<>();
     private final FakeEngines engines = new FakeEngines();
     private SessionController controller;
 
@@ -62,6 +63,8 @@ class SessionControllerTest {
         @Override public void onUtterance(Utterance u) { heard.add(u); }
         @Override public void onTranslation(Utterance u, TranslationResult r) { translated.add(r); }
         @Override public void onCaptureState(Source s, CaptureLoop.State st, String d) { events.add(s + " " + st); }
+        @Override public void onRelayState(boolean active, boolean paused, String lang) { events.add("relay " + active + " " + paused + " " + lang); }
+        @Override public void onRelaySent(Utterance u) { events.add("sent " + u.id()); }
     };
 
     @AfterEach
@@ -114,7 +117,7 @@ class SessionControllerTest {
 
         AppSettings other = new AppSettings(s.remoteSource(), s.micDeviceId(), s.outputDevice(), s.nativeLanguage(),
                 s.recognizedLanguages(), "models/whisper/other.bin", s.whisperGpu(), s.ttsVoice(), s.ttsSpeed(),
-                s.openAiModel(), s.translateHotkey(), s.replayHotkey(), s.contextLines());
+                s.openAiModel(), s.translateHotkey(), s.replayHotkey(), s.contextLines(), s.relay());
         c.start(other).get(5, TimeUnit.SECONDS);
         assertEquals(2, engines.recognizersOpened.get());
         assertEquals(1, engines.recognizersClosed.get(), "the replaced recognizer was freed");
@@ -130,6 +133,44 @@ class SessionControllerTest {
         assertEquals(SessionController.Status.STOPPED, c.status());
         assertTrue(events.contains("status STOPPED: Could not start: Whisper model not found: models/whisper/x.bin."), events.toString());
         assertTrue(engines.streams.isEmpty(), "no capture started");
+    }
+
+    private static AppSettings withRelay(boolean on) {
+        AppSettings d = AppSettings.defaults();
+        AppSettings.RelaySettings r = d.relay();
+        return new AppSettings(d.remoteSource(), d.micDeviceId(), d.outputDevice(), d.nativeLanguage(),
+                d.recognizedLanguages(), d.whisperModel(), d.whisperGpu(), d.ttsVoice(), d.ttsSpeed(), d.openAiModel(),
+                d.translateHotkey(), d.replayHotkey(), d.contextLines(),
+                new AppSettings.RelaySettings(on, "ja", r.outputDevice(), r.ttsModel(), r.voice(), r.pauseHotkey()));
+    }
+
+    @Test
+    void relaysTheUsersOwnSpeechIntoTheVoiceChat() throws Exception {
+        engines.micSpeaks = true;
+        SessionController c = controller();
+        c.start(withRelay(true)).get(5, TimeUnit.SECONDS);
+        assertTrue(events.contains("relay true false ja"), events.toString());
+        await("own line sent", () -> !sentToVoiceChat.isEmpty());
+        assertEquals("往左走。", sentToVoiceChat.getFirst(), "translated, then spoken with the relay voice");
+        assertTrue(played.isEmpty(), "nothing on the user's headphones");
+
+        c.toggleRelayPaused();
+        assertTrue(events.contains("relay true true ja"), events.toString());
+        c.stop().get(5, TimeUnit.SECONDS);
+        assertTrue(events.contains("relay false false null"), events.toString());
+    }
+
+    @Test
+    void missingCableTurnsOffOnlyTranslateMySpeech() throws Exception {
+        engines.cableMissing = true;
+        SessionController c = controller();
+        c.start(withRelay(true)).get(5, TimeUnit.SECONDS);
+        assertEquals(SessionController.Status.RUNNING, c.status());
+        assertTrue(events.stream().anyMatch(e -> e.startsWith("error Translate my speech is off: No output device matches")),
+                events.toString());
+        assertTrue(events.contains("relay false false null"), events.toString());
+        c.toggleRelayPaused();
+        assertTrue(events.contains("notice Translate my speech is off. Turn it on in Settings, then start a session."));
     }
 
     @Test
@@ -161,6 +202,8 @@ class SessionControllerTest {
         final AtomicInteger ttsOpened = new AtomicInteger();
         final AtomicReference<String> lastKeyUsed = new AtomicReference<>();
         volatile RuntimeException recognizerFailure;
+        volatile boolean micSpeaks;
+        volatile boolean cableMissing;
 
         @Override
         public CaptureBackend captureBackend() {
@@ -170,7 +213,7 @@ class SessionControllerTest {
 
                 @Override
                 public CaptureStream open(CaptureTarget target, int rate, int channels) {
-                    FakeStream s = new FakeStream(target instanceof CaptureTarget.ProcessTree);
+                    FakeStream s = new FakeStream(target instanceof CaptureTarget.ProcessTree || micSpeaks);
                     streams.add(s);
                     return s;
                 }
@@ -222,6 +265,26 @@ class SessionControllerTest {
                     lastKeyUsed.set(key.get());
                     return new TranslationResult("往左走。", "fake", s.openAiModel(), Duration.ofMillis(5), false);
                 }
+            };
+        }
+
+        /** The relay voice remembers its text; the fake cable records it when "played". */
+        volatile String lastRelayText;
+
+        @Override
+        public TtsEngine relayTts(AppSettings s, Supplier<String> key) {
+            return (text, lang, voice, speed) -> {
+                lastRelayText = text;
+                return new AudioClip(new float[240], 24_000);
+            };
+        }
+
+        @Override
+        public AudioSink relaySink(AppSettings s) {
+            if (cableMissing) throw new IllegalArgumentException("No output device matches \"CABLE Input\". Available: []");
+            return new AudioSink() {
+                @Override public void play(AudioClip clip) { sentToVoiceChat.add(lastRelayText); }
+                @Override public void stop() {}
             };
         }
 

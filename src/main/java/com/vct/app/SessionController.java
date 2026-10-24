@@ -12,6 +12,7 @@ import com.vct.segment.UtteranceSegmenter;
 import com.vct.segment.VoiceActivityDetector;
 import com.vct.session.SessionListener;
 import com.vct.session.SessionSettings;
+import com.vct.session.SpeechRelay;
 import com.vct.session.TranslatorSession;
 import com.vct.stt.HallucinationFilter;
 import com.vct.stt.SpeechRecognizer;
@@ -47,8 +48,11 @@ public final class SessionController implements AutoCloseable {
 
     public enum Status { STOPPED, LOADING, RUNNING, STOPPING }
 
-    public interface Listener extends SessionListener {
+    public interface Listener extends SessionListener, SpeechRelay.Listener {
         default void onStatus(Status status, String detail) {}
+
+        /** "Translate my speech": whether it runs, is paused, and into which language. */
+        default void onRelayState(boolean active, boolean paused, String targetLanguage) {}
 
         default void onCaptureState(Source source, CaptureLoop.State state, String detail) {}
 
@@ -69,6 +73,12 @@ public final class SessionController implements AutoCloseable {
         AudioSink sink(AppSettings s);
 
         TranslationProvider translator(AppSettings s, Supplier<String> apiKey);
+
+        /** The voice the others hear for "translate my speech". */
+        TtsEngine relayTts(AppSettings s, Supplier<String> apiKey);
+
+        /** Where "translate my speech" plays: the virtual cable. Throws if the device does not exist. */
+        AudioSink relaySink(AppSettings s);
 
         CaptureLoop.TargetResolver mic(AppSettings s);
 
@@ -100,6 +110,7 @@ public final class SessionController implements AutoCloseable {
     private CaptureLoop remoteLoop;
 
     private volatile TranslatorSession session;
+    private volatile SpeechRelay relay;
     private volatile Status status = Status.STOPPED;
     private volatile Path transcriptFile;
 
@@ -181,8 +192,18 @@ public final class SessionController implements AutoCloseable {
                 FeedbackGuard.defaults(clock), clock);
         SessionSettings settings = new SessionSettings(s.nativeLanguage(), new LinkedHashSet<>(s.recognizedLanguages()),
                 List.of(), s.contextLines(), Duration.ofMillis(1500), null, (float) s.ttsSpeed());
-        TranslatorSession started = new TranslatorSession(c, settings, listener);
+        relay = startRelay(s, transcript);
+        TranslatorSession started = new TranslatorSession(c, settings, new Forwarding(listener) {
+            @Override
+            public void onUtterance(Utterance u) {
+                super.onUtterance(u);
+                SpeechRelay r = relay;
+                if (r != null) r.submit(u); // the relay only takes the user's own lines
+            }
+        });
         session = started;
+        SpeechRelay r = relay;
+        listener.onRelayState(r != null, false, r == null ? null : r.targetLanguage());
 
         micLoop = new CaptureLoop("mic", backend, engines.mic(s), x -> started.onAudio(Source.MIC, x),
                 (state, detail) -> listener.onCaptureState(Source.MIC, state, detail), CaptureLoop.Config.defaults()).start();
@@ -190,10 +211,41 @@ public final class SessionController implements AutoCloseable {
                 (state, detail) -> listener.onCaptureState(Source.REMOTE, state, detail), CaptureLoop.Config.defaults()).start();
     }
 
+    /** Null when switched off, or when its output device is missing (Translate others keeps working). */
+    private SpeechRelay startRelay(AppSettings s, JsonlTranscriptWriter transcript) {
+        AppSettings.RelaySettings rs = s.relay();
+        if (!rs.enabled()) return null;
+        try {
+            AudioSink cable = engines.relaySink(s);
+            return new SpeechRelay(SpeechRelay.Config.defaults(rs.targetLanguage()), translation,
+                    engines.relayTts(s, apiKey), cable, transcript, listener);
+        } catch (RuntimeException e) {
+            listener.onError("Translate my speech is off: " + e.getMessage()
+                    + " Install VB-CABLE (see docs/speech-setup.md) or choose another output in Settings.", e);
+            return null;
+        }
+    }
+
+    /** Pauses or resumes "translate my speech" (the pause hotkey). */
+    public void toggleRelayPaused() {
+        SpeechRelay r = relay;
+        if (r == null) {
+            listener.onNotice("Translate my speech is off. Turn it on in Settings, then start a session.");
+            return;
+        }
+        r.setPaused(!r.isPaused());
+        listener.onRelayState(true, r.isPaused(), r.targetLanguage());
+        listener.onNotice(r.isPaused() ? "Translate my speech: paused. Nothing you say is sent." : "Translate my speech: on.");
+    }
+
     private void stopNow() {
         TranslatorSession s = session;
         if (s == null && micLoop == null && remoteLoop == null) return;
         setStatus(Status.STOPPING, "Stopping...");
+        SpeechRelay r = relay;
+        relay = null;
+        if (r != null) r.close();
+        listener.onRelayState(false, false, null);
         if (micLoop != null) micLoop.close();
         if (remoteLoop != null) remoteLoop.close();
         micLoop = null;
@@ -249,6 +301,23 @@ public final class SessionController implements AutoCloseable {
     /** As {@link #listModels(AppSettings)}, with a key typed in Settings but not saved yet. */
     public List<String> listModels(AppSettings s, String key) throws Exception {
         return engines.translator(s, () -> key).listModels();
+    }
+
+    /** Passes every session event on; subclasses add to single events. */
+    private static class Forwarding implements SessionListener {
+        private final SessionListener to;
+
+        Forwarding(SessionListener to) {
+            this.to = to;
+        }
+
+        @Override public void onUtterance(Utterance u) { to.onUtterance(u); }
+        @Override public void onTranslationStarted(Utterance u) { to.onTranslationStarted(u); }
+        @Override public void onTranslation(Utterance u, TranslationResult r) { to.onTranslation(u, r); }
+        @Override public void onPlaybackStarted(Utterance u) { to.onPlaybackStarted(u); }
+        @Override public void onPlaybackFinished(Utterance u) { to.onPlaybackFinished(u); }
+        @Override public void onSegmentDropped() { to.onSegmentDropped(); }
+        @Override public void onError(String message, Throwable cause) { to.onError(message, cause); }
     }
 
     private TranslatorSession runningSession() {

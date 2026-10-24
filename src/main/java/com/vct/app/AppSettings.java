@@ -21,6 +21,7 @@ import java.util.function.Function;
  *
  * @param micDeviceId  capture device id, or null for the Windows default microphone
  * @param outputDevice part of the output device name for translations, or null for the default
+ * @param relay        "translate my speech": the user's lines, translated into the voice chat
  */
 public record AppSettings(
         RemoteSource remoteSource,
@@ -35,9 +36,25 @@ public record AppSettings(
         String openAiModel,
         String translateHotkey,
         String replayHotkey,
-        int contextLines) {
+        int contextLines,
+        RelaySettings relay) {
 
     public static final String API_KEY_SECRET = "openai-api-key";
+
+    /**
+     * "Translate my speech". The translation plays on {@code outputDevice}, normally the virtual
+     * cable's "CABLE Input", whose other end ("CABLE Output") is the voice chat's microphone.
+     *
+     * @param targetLanguage what the others hear ("en" or "ja"), chosen per session
+     * @param ttsModel       OpenAI speech model, e.g. gpt-4o-mini-tts
+     * @param voice          OpenAI voice, e.g. alloy
+     */
+    public record RelaySettings(boolean enabled, String targetLanguage, String outputDevice, String ttsModel,
+                                String voice, String pauseHotkey) {
+        public static RelaySettings defaults() {
+            return new RelaySettings(false, "en", "CABLE Input", "gpt-4o-mini-tts", "alloy", "Ctrl+Alt+M");
+        }
+    }
 
     public AppSettings {
         recognizedLanguages = List.copyOf(recognizedLanguages);
@@ -46,7 +63,7 @@ public record AppSettings(
     public static AppSettings defaults() {
         return new AppSettings(RemoteSource.OTHERS, null, null, "zh", List.of("en", "ja", "zh"),
                 "models/whisper/ggml-large-v3-turbo-q8_0.bin", true, "models/tts/vits-piper-zh_CN-huayan-medium",
-                1.0, "gpt-4.1-mini", "Ctrl+Alt+T", "Ctrl+Alt+R", 2);
+                1.0, "gpt-4.1-mini", "Ctrl+Alt+T", "Ctrl+Alt+R", 2, RelaySettings.defaults());
     }
 
     /** {@code %APPDATA%\VoiceChatTranslator\settings.json} on Windows, {@code ~/.config/...} elsewhere. */
@@ -71,7 +88,7 @@ public record AppSettings(
             return new Loaded(d, List.of("Settings file " + file + " is damaged (" + e.getMessage() + "); using defaults."));
         }
         List<String> warnings = new ArrayList<>();
-        Reader r = new Reader(m, warnings);
+        Reader r = new Reader(m, warnings, "");
         AppSettings s = new AppSettings(
                 r.get("remoteSource", d.remoteSource(), v -> RemoteSource.parse((String) v)),
                 r.get("micDeviceId", d.micDeviceId(), v -> (String) v),
@@ -85,8 +102,27 @@ public record AppSettings(
                 r.get("openAiModel", d.openAiModel(), v -> nonBlank((String) v)),
                 r.get("translateHotkey", d.translateHotkey(), v -> Hotkey.parse((String) v).toString()),
                 r.get("replayHotkey", d.replayHotkey(), v -> Hotkey.parse((String) v).toString()),
-                r.get("contextLines", d.contextLines(), v -> (int) range(((Number) v).intValue(), 0, 10)));
+                r.get("contextLines", d.contextLines(), v -> (int) range(((Number) v).intValue(), 0, 10)),
+                loadRelay(m.get("relay"), warnings));
         return new Loaded(s, List.copyOf(warnings));
+    }
+
+    private static RelaySettings loadRelay(Object value, List<String> warnings) {
+        RelaySettings d = RelaySettings.defaults();
+        if (!(value instanceof Map<?, ?> raw)) {
+            if (value != null) warnings.add("Setting \"relay\" is invalid; using the defaults.");
+            return d;
+        }
+        Map<String, Object> m = new LinkedHashMap<>();
+        raw.forEach((k, v) -> m.put(String.valueOf(k), v));
+        Reader r = new Reader(m, warnings, "relay.");
+        return new RelaySettings(
+                r.get("enabled", d.enabled(), v -> (Boolean) v),
+                r.get("targetLanguage", d.targetLanguage(), v -> nonBlank((String) v)),
+                r.get("outputDevice", d.outputDevice(), v -> (String) v),
+                r.get("ttsModel", d.ttsModel(), v -> nonBlank((String) v)),
+                r.get("voice", d.voice(), v -> nonBlank((String) v)),
+                r.get("pauseHotkey", d.pauseHotkey(), v -> Hotkey.parse((String) v).toString()));
     }
 
     /** Writes atomically: a crash while saving never leaves a half-written file. */
@@ -105,6 +141,14 @@ public record AppSettings(
         m.put("translateHotkey", translateHotkey);
         m.put("replayHotkey", replayHotkey);
         m.put("contextLines", contextLines);
+        Map<String, Object> rl = new LinkedHashMap<>();
+        rl.put("enabled", relay.enabled());
+        rl.put("targetLanguage", relay.targetLanguage());
+        rl.put("outputDevice", relay.outputDevice());
+        rl.put("ttsModel", relay.ttsModel());
+        rl.put("voice", relay.voice());
+        rl.put("pauseHotkey", relay.pauseHotkey());
+        m.put("relay", rl);
         Files.createDirectories(file.toAbsolutePath().getParent());
         Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
         Files.writeString(tmp, Json.write(m), StandardCharsets.UTF_8);
@@ -121,7 +165,8 @@ public record AppSettings(
         return v;
     }
 
-    private record Reader(Map<String, Object> m, List<String> warnings) {
+    /** @param prefix shown before the key in warnings, e.g. "relay." */
+    private record Reader(Map<String, Object> m, List<String> warnings, String prefix) {
         <T> T get(String key, T fallback, Function<Object, T> convert) {
             if (!m.containsKey(key)) return fallback;
             Object v = m.get(key);
@@ -131,7 +176,7 @@ public record AppSettings(
                 if (out == null && fallback != null) throw new IllegalArgumentException("a value is required");
                 return out;
             } catch (RuntimeException e) {
-                warnings.add("Setting \"" + key + "\" = " + Json.write(v) + " is invalid (" + e.getMessage()
+                warnings.add("Setting \"" + prefix + key + "\" = " + Json.write(v) + " is invalid (" + e.getMessage()
                         + "); using " + (fallback == null ? "the default" : Json.write(fallback instanceof RemoteSource rs
                         ? rs.name().toLowerCase(java.util.Locale.ROOT) : fallback)) + ".");
                 return fallback;
