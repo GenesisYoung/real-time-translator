@@ -29,5 +29,9 @@ class SpeechCheckTest {
                 () -> SpeechCheck.parse(new String[]{"live", "--remote", "discordm"})).getMessage().contains("\"discordm\""));
         assertTrue(assertThrows(IllegalArgumentException.class,
                 () -> SpeechCheck.parse(new String[]{"live", "--openai-model"})).getMessage().endsWith("needs a value."));
+        // Found on Windows: a placeholder typed literally became the model "<name" plus ignored words.
+        assertTrue(assertThrows(IllegalArgumentException.class, () -> SpeechCheck.parse(
+                new String[]{"live", "--openai-model", "<name", "from", "the", "list>"}))
+                .getMessage().startsWith("Unexpected text \"from the list>\""));
     }
 }

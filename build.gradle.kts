@@ -90,7 +90,7 @@ tasks.register<JavaExec>("captureCheck") {
 // Checks the speech engines on this PC (see docs/speech-setup.md). Examples:
 //   gradlew speechCheck --args="transcribe build\capture-check\remote.wav"
 //   gradlew speechCheck --args="say 我们应该往左走。"
-//   gradlew speechCheck --args="live --openai-model <model> --remote others"
+//   gradlew --console=plain speechCheck --args="live --openai-model gpt-4.1-mini --remote others"
 tasks.register<JavaExec>("speechCheck") {
     group = "verification"
     description = "Checks Whisper, the TTS voice, or the whole live pipeline."

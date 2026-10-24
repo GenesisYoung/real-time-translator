@@ -13,6 +13,8 @@ import java.util.function.Consumer;
  * {@code endSilenceMs} of frames below {@code endThreshold} (hysteresis avoids flapping). Speech
  * shorter than {@code minSpeechMs} is discarded as a click/cough, and segments longer than
  * {@code maxUtteranceMs} are force-split so a monologue still reaches the buffer incrementally.
+ * Fluent speakers rarely pause as long as {@code endSilenceMs}, so once an utterance is longer than
+ * {@code softMaxUtteranceMs}, a pause of {@code softEndSilenceMs} already ends it.
  *
  * <p>Driven from a single audio thread. {@link #isInSpeech()} and {@link #currentStartSample()}
  * may be read from other threads.
@@ -28,20 +30,22 @@ public final class UtteranceSegmenter {
             int endSilenceMs,
             int maxUtteranceMs,
             int preRollMs,
-            int trailingPadMs) {
+            int trailingPadMs,
+            int softMaxUtteranceMs,
+            int softEndSilenceMs) {
 
         public static Config defaults() {
-            return new Config(16_000, 512, 0.5f, 0.35f, 250, 700, 15_000, 200, 150);
+            return new Config(16_000, 512, 0.5f, 0.35f, 250, 700, 15_000, 200, 150, 6_000, 300);
         }
 
         public Config withEndSilenceMs(int ms) {
             return new Config(sampleRate, frameSize, startThreshold, endThreshold, minSpeechMs, ms,
-                    maxUtteranceMs, preRollMs, trailingPadMs);
+                    maxUtteranceMs, preRollMs, trailingPadMs, softMaxUtteranceMs, softEndSilenceMs);
         }
 
         public Config withMaxUtteranceMs(int ms) {
             return new Config(sampleRate, frameSize, startThreshold, endThreshold, minSpeechMs,
-                    endSilenceMs, ms, preRollMs, trailingPadMs);
+                    endSilenceMs, ms, preRollMs, trailingPadMs, softMaxUtteranceMs, softEndSilenceMs);
         }
     }
 
@@ -50,6 +54,7 @@ public final class UtteranceSegmenter {
     private final ArrayDeque<float[]> preRoll = new ArrayDeque<>();
     private final int preRollFrames;
     private final int maxSamples;
+    private final int softMaxSamples;
     private final int padSamples;
 
     private float[] buf;
@@ -65,6 +70,7 @@ public final class UtteranceSegmenter {
         this.out = out;
         this.preRollFrames = msToFrames(cfg.preRollMs());
         this.maxSamples = (int) ((long) cfg.maxUtteranceMs() * cfg.sampleRate() / 1000);
+        this.softMaxSamples = (int) ((long) cfg.softMaxUtteranceMs() * cfg.sampleRate() / 1000);
         this.padSamples = (int) ((long) cfg.trailingPadMs() * cfg.sampleRate() / 1000);
         this.buf = new float[cfg.sampleRate() * 4];
     }
@@ -96,7 +102,8 @@ public final class UtteranceSegmenter {
                 speechFrames++;
             }
             long nextStart = samplePos + frame.length;
-            if (silenceFrames * frameMs() >= cfg.endSilenceMs()) {
+            int endSilenceMs = len >= softMaxSamples ? cfg.softEndSilenceMs() : cfg.endSilenceMs();
+            if (silenceFrames * frameMs() >= endSilenceMs) {
                 finish(false, nextStart);
             } else if (len >= maxSamples) {
                 finish(true, nextStart);
