@@ -60,6 +60,7 @@ class SessionControllerTest {
     private final SessionController.Listener listener = new SessionController.Listener() {
         @Override public void onStatus(SessionController.Status s, String d) { events.add("status " + s + ": " + d); }
         @Override public void onNotice(String m) { events.add("notice " + m); }
+        @Override public void onSubtitlesState(boolean on) { events.add("subtitles " + on); }
         @Override public void onError(String m, Throwable t) { events.add("error " + m); }
         @Override public void onUtterance(Utterance u) { heard.add(u); }
         @Override public void onTranslation(Utterance u, TranslationResult r) { translated.add(r); }
@@ -119,7 +120,7 @@ class SessionControllerTest {
 
         AppSettings other = new AppSettings(s.remoteSource(), s.micDeviceId(), s.outputDevice(), s.nativeLanguage(),
                 s.recognizedLanguages(), "models/whisper/other.bin", s.whisperGpu(), s.ttsVoice(), s.ttsSpeed(),
-                s.openAiModel(), s.translateHotkey(), s.replayHotkey(), s.contextLines(), s.relay());
+                s.openAiModel(), s.translateHotkey(), s.replayHotkey(), s.contextLines(), s.relay(), s.subtitles());
         c.start(other).get(5, TimeUnit.SECONDS);
         assertEquals(2, engines.recognizersOpened.get());
         assertEquals(1, engines.recognizersClosed.get(), "the replaced recognizer was freed");
@@ -143,7 +144,8 @@ class SessionControllerTest {
         return new AppSettings(d.remoteSource(), d.micDeviceId(), d.outputDevice(), d.nativeLanguage(),
                 d.recognizedLanguages(), d.whisperModel(), d.whisperGpu(), d.ttsVoice(), d.ttsSpeed(), d.openAiModel(),
                 d.translateHotkey(), d.replayHotkey(), d.contextLines(),
-                new AppSettings.RelaySettings(on, "ja", r.outputDevice(), r.ttsModel(), r.voice(), r.pauseHotkey(), r.liveHotkey()));
+                new AppSettings.RelaySettings(on, "ja", r.outputDevice(), r.ttsModel(), r.voice(), r.pauseHotkey(), r.liveHotkey()),
+                d.subtitles());
     }
 
     @Test
@@ -178,6 +180,29 @@ class SessionControllerTest {
         int after = liveSamples.get();
         Thread.sleep(100);
         assertEquals(after, liveSamples.get(), "nothing sent once released");
+    }
+
+    @Test
+    void subtitlesTranslateTheOthersWithoutAHotkeyAndCanBeSwitchedOff() throws Exception {
+        SessionController c = controller();
+        c.setSubtitles(true, false);
+        c.start(AppSettings.defaults()).get(5, TimeUnit.SECONDS);
+        await("translated without pressing anything", () -> !translated.isEmpty());
+        assertEquals("往左走。", translated.getFirst().text());
+        assertTrue(played.isEmpty(), "not read aloud unless asked");
+
+        c.toggleSubtitles();
+        assertTrue(events.contains("subtitles false"), events.toString());
+        assertFalse(c.subtitlesOn());
+    }
+
+    @Test
+    void subtitlesWithoutAKeyExplainWhy() throws Exception {
+        apiKey.set(null);
+        SessionController c = controller();
+        c.setSubtitles(true, false);
+        c.start(AppSettings.defaults()).get(5, TimeUnit.SECONDS);
+        assertTrue(events.contains("notice Add your OpenAI API key in Settings to translate the subtitles."), events.toString());
     }
 
     @Test

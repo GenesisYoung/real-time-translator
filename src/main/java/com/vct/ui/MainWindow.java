@@ -57,6 +57,12 @@ final class MainWindow implements SessionController.Listener {
 
         /** Pauses or resumes "translate my speech". */
         void toggleRelay();
+
+        /** Shows or hides the subtitles over the game. */
+        void toggleSubtitles();
+
+        /** Starts or ends moving the subtitles with the mouse. */
+        void moveSubtitles();
     }
 
     private static final int MAX_HISTORY = 300;
@@ -73,6 +79,11 @@ final class MainWindow implements SessionController.Listener {
     private final Indicator remote = new Indicator("Others");
     private final Indicator relay = new Indicator("My voice: off");
     private final Button relayButton = new Button("Pause my voice");
+    private final Button subtitlesButton = new Button("Subtitles: off");
+    private final Button moveButton = new Button("Move subtitles");
+    private String subtitlesKey = "";
+    private boolean subtitlesOn;
+    private SubtitleOverlay overlay;
     private String pauseKey = "";
     private String liveKey = "";
     private boolean relayActive, relayPaused, relayLive;
@@ -95,12 +106,16 @@ final class MainWindow implements SessionController.Listener {
         relayButton.setOnAction(e -> actions.toggleRelay());
         relayButton.setDisable(true);
         relayButton.setTooltip(new Tooltip("While paused, nothing you say is sent to the voice chat"));
+        subtitlesButton.setOnAction(e -> actions.toggleSubtitles());
+        subtitlesButton.setTooltip(new Tooltip("While on, everything the others say is translated and shown over the game"));
+        moveButton.setOnAction(e -> actions.moveSubtitles());
         translate.setDisable(true);
         replay.setDisable(true);
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        HBox toolbar = new HBox(8, startStop, translate, replay, cancel, relayButton, spacer, settings);
+        HBox toolbar = new HBox(8, startStop, translate, replay, cancel, relayButton, subtitlesButton, moveButton,
+                spacer, settings);
         toolbar.setAlignment(Pos.CENTER_LEFT);
 
         status.getStyleClass().add("status");
@@ -125,7 +140,7 @@ final class MainWindow implements SessionController.Listener {
         BorderPane root = new BorderPane(list, top, null, notice, null);
         BorderPane.setMargin(list, new Insets(10, 0, 10, 0));
         root.setPadding(new Insets(12));
-        Scene scene = new Scene(root, 960, 600); // wide enough for all toolbar buttons with their hotkeys
+        Scene scene = new Scene(root, 1280, 640); // wide enough for all toolbar buttons with their hotkeys
         scene.getStylesheets().add(MainWindow.class.getResource("app.css").toExternalForm());
         stage.setScene(scene);
         stage.setTitle("Voice Chat Translator");
@@ -144,6 +159,33 @@ final class MainWindow implements SessionController.Listener {
         this.liveKey = liveKey;
         updateRelayButton();
         showRelay();
+    }
+
+    void setSubtitlesHotkey(String key) {
+        subtitlesKey = key;
+        updateSubtitlesButton();
+    }
+
+    /** The subtitles window this one passes the lines and translations to, or null. */
+    void setOverlay(SubtitleOverlay overlay) {
+        this.overlay = overlay;
+    }
+
+    void setMovingSubtitles(boolean moving) {
+        runOnFx(() -> moveButton.setText(moving ? "Done moving" : "Move subtitles"));
+    }
+
+    private void updateSubtitlesButton() {
+        subtitlesButton.setText((subtitlesOn ? "Subtitles: on" : "Subtitles: off") + (subtitlesKey.isEmpty() ? "" : "  (" + subtitlesKey + ")"));
+    }
+
+    @Override
+    public void onSubtitlesState(boolean on) {
+        runOnFx(() -> {
+            subtitlesOn = on;
+            updateSubtitlesButton();
+            if (overlay != null) overlay.setActive(on);
+        });
     }
 
     private void updateRelayButton() {
@@ -175,6 +217,7 @@ final class MainWindow implements SessionController.Listener {
             translate.setDisable(!running);
             replay.setDisable(!running);
             if (!running) {
+                if (overlay != null) overlay.clear();
                 mic.set(null, null);
                 remote.set(null, null);
             }
@@ -251,6 +294,7 @@ final class MainWindow implements SessionController.Listener {
         runOnFx(() -> {
             history.add(new HistoryItem(u));
             if (history.size() > MAX_HISTORY) history.removeFirst();
+            if (overlay != null) overlay.onUtterance(u);
             if (following) followBottom();
         });
     }
@@ -262,6 +306,9 @@ final class MainWindow implements SessionController.Listener {
 
     @Override
     public void onTranslation(Utterance u, TranslationResult r) {
+        runOnFx(() -> {
+            if (overlay != null) overlay.onTranslation(u, r);
+        });
         runOnFx(() -> find(u).ifPresent(i -> {
             i.translation.set(r.text());
             i.note.set(String.format(Locale.ROOT, "%s %s, %d ms%s", r.provider(), r.model(), r.latency().toMillis(),

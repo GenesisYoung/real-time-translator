@@ -60,6 +60,9 @@ public final class SessionController implements AutoCloseable {
 
         default void onCaptureState(Source source, CaptureLoop.State state, String detail) {}
 
+        /** Subtitles over the game switched on or off. */
+        default void onSubtitlesState(boolean on) {}
+
         /** Information for the user that is not an error, e.g. "nothing to translate yet". */
         default void onNotice(String message) {}
     }
@@ -121,6 +124,9 @@ public final class SessionController implements AutoCloseable {
 
     /** Keeps the connection to OpenAI open while translate-my-speech runs; null otherwise. */
     private ScheduledExecutorService warmer;
+
+    private volatile boolean subtitles;
+    private volatile boolean subtitlesSpeak;
 
     private volatile TranslatorSession session;
     private volatile SpeechRelay relay;
@@ -218,6 +224,7 @@ public final class SessionController implements AutoCloseable {
             }
         });
         session = started;
+        applySubtitles(started);
         SpeechRelay r = relay;
         listener.onRelayState(r != null, false, r == null ? null : r.targetLanguage());
 
@@ -264,6 +271,35 @@ public final class SessionController implements AutoCloseable {
             // unknown: the echo guard is the second line of defence
         }
         return null;
+    }
+
+    /**
+     * Subtitles from the settings: on or off, and whether they are also read aloud. Applies to the
+     * running session at once.
+     */
+    public void setSubtitles(boolean on, boolean speak) {
+        subtitles = on;
+        subtitlesSpeak = speak;
+        applySubtitles(session);
+        listener.onSubtitlesState(on);
+    }
+
+    /** Shows or hides the subtitles (the hotkey). While hidden, nothing is translated. */
+    public void toggleSubtitles() {
+        setSubtitles(!subtitles, subtitlesSpeak);
+        listener.onNotice(subtitles ? "Subtitles: on. Everything the others say is translated."
+                : "Subtitles: off. Nothing is translated until you press Translate.");
+    }
+
+    public boolean subtitlesOn() {
+        return subtitles;
+    }
+
+    private void applySubtitles(TranslatorSession s) {
+        if (s == null) return;
+        boolean on = subtitles && apiKey.get() != null && !apiKey.get().isBlank();
+        if (subtitles && !on) listener.onNotice("Add your OpenAI API key in Settings to translate the subtitles.");
+        s.setAutoTranslate(on, subtitlesSpeak);
     }
 
     /** Pauses or resumes "translate my speech" (the pause hotkey). */

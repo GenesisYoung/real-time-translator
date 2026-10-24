@@ -33,6 +33,8 @@ public final class UiPreviewApp extends Application implements MainWindow.Action
         MainWindow w = new MainWindow(stage, this);
         w.setHotkeyHints("Ctrl+Alt+T", "Ctrl+Alt+R", "Ctrl+Alt+M", "Ctrl+Alt+V");
         w.onRelayState(true, false, "ja");
+        w.setSubtitlesHotkey("Ctrl+Alt+S");
+        w.onSubtitlesState(true);
         w.setRemoteLabel("All audio except this app");
         w.onStatus(SessionController.Status.RUNNING, "Listening (All audio except this app)");
         w.onCaptureState(Source.MIC, CaptureLoop.State.RUNNING, "Default microphone");
@@ -57,6 +59,22 @@ public final class UiPreviewApp extends Application implements MainWindow.Action
                 () -> w.onTranslationStarted(d));
         for (int i = 0; i < events.size(); i++) after(100 + 60L * i, events.get(i));
 
+        // Subtitles over the game: one translated line, one still waiting for its translation.
+        SubtitleOverlay overlay = new SubtitleOverlay(new SubtitleOverlay.Style("zh", 26, true, 60, null, null), (x, y) -> {});
+        overlay.open();
+        overlay.setActive(true);
+        Utterance s1 = u("r-2001", Source.REMOTE, t, "Two of them are hiding behind the red container.", "en", false);
+        Utterance s2 = u("r-2002", Source.REMOTE, t, "右の建物に敵が三人いるよ、気をつけて。", "ja", false);
+        after(100, () -> overlay.onUtterance(s1));
+        after(150, () -> overlay.onTranslation(s1, new TranslationResult("他们有两个人躲在红色集装箱后面。", "openai", "gpt-4.1-mini", Duration.ofMillis(900), false)));
+        after(200, () -> overlay.onUtterance(s2));
+        after(700, () -> saveOver(overlay.scene(), "subtitles.png"));
+        after(800, () -> overlay.setMoving(true));
+        after(1000, () -> {
+            saveOver(overlay.scene(), "subtitles-move.png");
+            overlay.setMoving(false);
+        });
+
         Platform.runLater(() -> after(1200, () -> {
             save(stage.getScene(), "main-window.png");
             // Then a long history: the list must follow the newest line without blank gaps.
@@ -71,7 +89,8 @@ public final class UiPreviewApp extends Application implements MainWindow.Action
             save(stage.getScene(), "main-window-long.png");
             Platform.runLater(() -> after(600, () -> {
                 // The dialog runs a nested event loop; this snapshot runs inside it.
-                Window dialog = Window.getWindows().stream().filter(x -> x != stage).findFirst().orElseThrow();
+                Window dialog = Window.getWindows().stream()
+                        .filter(x -> x instanceof Stage st && "Settings".equals(st.getTitle())).findFirst().orElseThrow();
                 save(dialog.getScene(), "settings.png");
                 dialog.hide(); // ends the dialog's nested event loop before JavaFX shuts down
                 Platform.runLater(Platform::exit);
@@ -99,10 +118,27 @@ public final class UiPreviewApp extends Application implements MainWindow.Action
     }
 
     private static void save(Scene scene, String name) {
-        WritableImage img = scene.snapshot(null);
+        write(scene.snapshot(null), name, null);
+    }
+
+    /** A transparent window over a stand-in for a game: a grey-blue gradient. */
+    private static void saveOver(Scene scene, String name) {
+        write(scene.snapshot(null), name, new java.awt.GradientPaint(0, 0, new java.awt.Color(0x55, 0x6b, 0x7d), 0, 300,
+                new java.awt.Color(0x9a, 0xa8, 0x8c)));
+    }
+
+    private static void write(WritableImage img, String name, java.awt.Paint background) {
         PixelReader px = img.getPixelReader();
         BufferedImage out = new BufferedImage((int) img.getWidth(), (int) img.getHeight(), BufferedImage.TYPE_INT_ARGB);
-        for (int y = 0; y < out.getHeight(); y++) for (int x = 0; x < out.getWidth(); x++) out.setRGB(x, y, px.getArgb(x, y));
+        java.awt.Graphics2D g = out.createGraphics();
+        if (background != null) {
+            g.setPaint(background);
+            g.fillRect(0, 0, out.getWidth(), out.getHeight());
+        }
+        BufferedImage fg = new BufferedImage(out.getWidth(), out.getHeight(), BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < out.getHeight(); y++) for (int x = 0; x < out.getWidth(); x++) fg.setRGB(x, y, px.getArgb(x, y));
+        g.drawImage(fg, 0, 0, null);
+        g.dispose();
         try {
             ImageIO.write(out, "png", new File(outDir, name));
             System.out.println("wrote " + new File(outDir, name).getAbsolutePath());
@@ -118,4 +154,6 @@ public final class UiPreviewApp extends Application implements MainWindow.Action
     @Override public void openSettings() {}
     @Override public void translate(Utterance u, boolean force) {}
     @Override public void toggleRelay() {}
+    @Override public void toggleSubtitles() {}
+    @Override public void moveSubtitles() {}
 }
