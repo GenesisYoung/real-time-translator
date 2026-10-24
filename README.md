@@ -21,15 +21,17 @@ TTS run locally; only the text of an utterance you explicitly ask to translate i
 | FFM binding, `CaptureLoop` (reconnect, default-device follow, Discord restart, format fallback) | Implemented, unit-tested; binding tested against a native stub |
 | `captureCheck` diagnostic (device list, level meters, WAV recording) | Implemented; for running on Windows |
 | Silero VAD (ONNX Runtime, bundled model) | Implemented; matches the official Python wrapper frame by frame |
-| Whisper via whisper.cpp 1.8.5 (`native/stt`, CUDA on Windows) | Implemented; tested on Linux CPU with a placeholder model. **Real transcription and CUDA not yet run** |
-| TTS via sherpa-onnx 1.13.8 C API (Piper / MeloTTS / Kokoro voices) | Implemented; tested with a real English Piper voice on Linux. **Chinese voice not yet run** |
+| Whisper via whisper.cpp 1.8.5 (`native/stt`, CUDA on Windows) | Implemented; runs on Windows 11 with CUDA (RTX 4060 Ti): 15 s of audio in under 0.9 s |
+| TTS via sherpa-onnx 1.13.8 C API (Piper / MeloTTS / Kokoro voices) | Implemented; Chinese Piper voice runs on Windows 11. Kokoro and MeloTTS voices not tested |
 | Headphone playback (Java Sound) | Implemented, tested with a null audio device |
-| `speechCheck` diagnostic (`transcribe`, `say`, `live`) | Implemented; setup in [docs/speech-setup.md](docs/speech-setup.md) |
+| `speechCheck` diagnostic (`transcribe`, `say`, `live`) | Implemented; the `live` pipeline (capture, VAD, Whisper, OpenAI, Chinese TTS) works on Windows 11. Setup in [docs/speech-setup.md](docs/speech-setup.md) |
 | **JavaFX UI, tray, hotkey, keychain storage (Windows Credential Manager), settings** | Not started (step 4) |
 
 97 tests, all passing on JDK 25 (Linux x64) with every engine present. Without the optional native
 libraries and voices, 6 of them are skipped (Whisper binding, TTS synthesis, playback). The step 2 suite
 (66 tests) also passed on Windows 11.
+
+The Discord-only capture mode (`--remote discord`) has not been tried with Discord running yet.
 
 ## Build and test
 
