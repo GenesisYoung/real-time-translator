@@ -3,3 +3,5 @@ build/
 *.class
 /models/
 /transcripts/
+.vs/
+.vscode/
