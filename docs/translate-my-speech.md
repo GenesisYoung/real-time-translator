@@ -87,8 +87,13 @@ flowchart LR
 
 ## Good to know
 
-- **Delay**: the translation plays about 2 to 4 seconds after you stop speaking (pause detection,
-  recognition, translation and the voice).
+- **Delay**: the translation starts about 1.5 to 2.5 seconds after you stop speaking. Each of your
+  lines in the history shows how long it took and where the time went, e.g. *heard 1.9 s (recognition
+  0.7 + translation 0.6 + voice 0.6) after you stopped*:
+  - **recognition**: the app waits for a 0.45 s pause that ends your line, then Whisper reads it;
+  - **translation**: the OpenAI translation request;
+  - **voice**: until OpenAI's voice starts (it plays while it is still arriving), and any earlier line
+    still playing.
 - **Cost**: every line you say is one translation request and one speech request to OpenAI.
 - Coughs and very short sounds are not sent. Lines Whisper is unsure about are not sent either: say them again.
 - If you already speak the target language (e.g. Japanese while "Others hear: Japanese") *without*

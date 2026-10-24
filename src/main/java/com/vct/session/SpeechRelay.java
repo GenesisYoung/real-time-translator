@@ -1,6 +1,5 @@
 package com.vct.session;
 
-import com.vct.audio.AudioClip;
 import com.vct.audio.AudioSink;
 import com.vct.feedback.FeedbackGuard;
 import com.vct.model.Source;
@@ -10,6 +9,7 @@ import com.vct.translate.TranslationMode;
 import com.vct.translate.TranslationRequest;
 import com.vct.translate.TranslationResult;
 import com.vct.translate.TranslationService;
+import com.vct.tts.SpeechStream;
 import com.vct.tts.TtsEngine;
 
 import java.io.IOException;
@@ -43,8 +43,8 @@ public final class SpeechRelay implements AutoCloseable {
         /** The line will be spoken; {@code r} is the translation (or the original, if already in the target language). */
         default void onRelayTranslation(Utterance u, TranslationResult r) {}
 
-        /** The line was spoken into the voice chat. */
-        default void onRelaySent(Utterance u) {}
+        /** The line was spoken into the voice chat; {@code delay} is how long after the user stopped it began. */
+        default void onRelaySent(Utterance u, Delay delay) {}
 
         /** The line was not sent; {@code reason} is user-readable. */
         default void onRelaySkipped(Utterance u, String reason) {}
@@ -53,6 +53,30 @@ public final class SpeechRelay implements AutoCloseable {
 
         /** The user's real voice started or stopped going into the voice chat. */
         default void onRelayLive(boolean live) {}
+    }
+
+    /**
+     * When the translation of a line began to play, counted from the end of the user's speech.
+     *
+     * @param recognition waiting for the pause that ends the line, plus Whisper
+     * @param translation the translation request
+     * @param voice       until the voice began: the speech request, and any earlier line still playing
+     */
+    public record Delay(Duration recognition, Duration translation, Duration voice) {
+        public Duration total() {
+            return recognition.plus(translation).plus(voice);
+        }
+
+        /** e.g. "2.1 s (recognition 0.8 + translation 0.7 + voice 0.6)" */
+        @Override
+        public String toString() {
+            return seconds(total()) + " s (recognition " + seconds(recognition) + " + translation " + seconds(translation)
+                    + " + voice " + seconds(voice) + ")";
+        }
+
+        private static String seconds(Duration d) {
+            return String.format(java.util.Locale.ROOT, "%.1f", Math.max(0, d.toMillis()) / 1000.0);
+        }
     }
 
     /**
@@ -154,8 +178,9 @@ public final class SpeechRelay implements AutoCloseable {
             return;
         }
         pending.incrementAndGet();
+        Instant submitted = Instant.now();
         List<String> context = context(u.text());
-        CompletableFuture<Prepared> prepared = CompletableFuture.supplyAsync(() -> prepare(u, context), work);
+        CompletableFuture<Prepared> prepared = CompletableFuture.supplyAsync(() -> prepare(u, context, submitted), work);
         playback.execute(() -> {
             try {
                 speak(u, prepared.join());
@@ -170,10 +195,13 @@ public final class SpeechRelay implements AutoCloseable {
         });
     }
 
-    private record Prepared(TranslationResult translation, AudioClip clip) {}
+    private record Prepared(TranslationResult translation, SpeechStream speech, Instant submitted, Instant translated) {}
 
-    /** Translates (unless already in the target language) and synthesizes. Runs in parallel. */
-    private Prepared prepare(Utterance u, List<String> context) {
+    /**
+     * Translates (unless already in the target language) and starts the voice. Runs in parallel;
+     * the voice keeps arriving while this line waits for its turn.
+     */
+    private Prepared prepare(Utterance u, List<String> context, Instant submitted) {
         try {
             TranslationResult r;
             if (u.language() != null && TranslatorSession.sameLanguage(u.language(), config.targetLanguage())) {
@@ -188,8 +216,10 @@ public final class SpeechRelay implements AutoCloseable {
                     listener.onRelayError(u, "Could not write transcript: " + e.getMessage());
                 }
             }
+            Instant translated = Instant.now();
             listener.onRelayTranslation(u, r);
-            return new Prepared(r, tts.synthesize(r.text(), config.targetLanguage(), config.voiceId(), config.speed()));
+            return new Prepared(r, tts.stream(r.text(), config.targetLanguage(), config.voiceId(), config.speed()),
+                    submitted, translated);
         } catch (CompletionException e) {
             throw e;
         } catch (Exception e) {
@@ -198,19 +228,22 @@ public final class SpeechRelay implements AutoCloseable {
     }
 
     private void speak(Utterance u, Prepared p) throws InterruptedException {
-        while (isLive() && !closed) Thread.sleep(20); // never over the user's own voice
-        if (paused || closed) {
-            listener.onRelaySkipped(u, "paused");
-            return;
-        }
-        try {
-            Instant now = Instant.now();
-            echoGuard.register(p.translation().text(), now, now.plus(p.clip().duration()));
-            sink.play(p.clip());
-            listener.onRelaySent(u);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        } catch (RuntimeException e) {
+        try (SpeechStream speech = p.speech()) {
+            while (isLive() && !closed) Thread.sleep(20); // never over the user's own voice
+            if (paused || closed) {
+                listener.onRelaySkipped(u, "paused");
+                return;
+            }
+            Instant start = Instant.now();
+            String text = p.translation().text();
+            // The length is known only at the end: assume a slow voice until then.
+            echoGuard.register(text, start, start.plusSeconds(1).plusMillis(150L * text.length()));
+            Delay delay = new Delay(Duration.between(u.end(), p.submitted()), Duration.between(p.submitted(), p.translated()),
+                    Duration.between(p.translated(), start));
+            sink.playStream(speech.pcm16(), speech.sampleRate());
+            echoGuard.register(text, start, Instant.now());
+            listener.onRelaySent(u, delay);
+        } catch (IOException | RuntimeException e) {
             listener.onRelayError(u, "Could not play into the voice chat: " + e.getMessage());
         }
     }

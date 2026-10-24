@@ -136,6 +136,8 @@ public final class TranslatorSession implements AutoCloseable {
     private final AtomicReference<Playback> lastPlayback = new AtomicReference<>();
     private volatile boolean paused;
     private volatile boolean closed;
+    private volatile boolean autoTranslate;
+    private volatile boolean autoSpeak;
 
     public TranslatorSession(Components components, SessionSettings settings, SessionListener listener) {
         this.c = components;
@@ -198,9 +200,34 @@ public final class TranslatorSession implements AutoCloseable {
                 listener.onError("Could not write transcript", e);
             }
             listener.onUtterance(u);
+            if (autoTranslate && s.source == Source.REMOTE && autoTranslates(u, settings.nativeLanguage())) translate(u, false, autoSpeak, false);
         } catch (Exception e) {
             listener.onError("Speech recognition failed", e);
         }
+    }
+
+    // ---------------------------------------------------------------- subtitles: translate others automatically
+
+    /**
+     * Translates every line of the other participants as soon as it is recognized (for subtitles).
+     * Unclear, very short and already-native lines are left as they are.
+     *
+     * @param speak also read each translation aloud on the headphones, one after another
+     */
+    public void setAutoTranslate(boolean on, boolean speak) {
+        this.autoSpeak = speak;
+        this.autoTranslate = on;
+    }
+
+    public boolean isAutoTranslating() {
+        return autoTranslate;
+    }
+
+    /** Whether subtitles translate this line; the others are shown as they were said. */
+    public static boolean autoTranslates(Utterance u, String nativeLanguage) {
+        if (u.source() != Source.REMOTE || u.lowConfidence()) return false;
+        if (u.text().codePoints().filter(Character::isLetterOrDigit).count() < 2) return false; // "嗯", "Uh"
+        return u.language() == null || !sameLanguage(u.language(), nativeLanguage);
     }
 
     // ---------------------------------------------------------------- Mode A: translate others
@@ -216,8 +243,17 @@ public final class TranslatorSession implements AutoCloseable {
                         .orElseGet(() -> CompletableFuture.failedFuture(new NothingToTranslateException())));
     }
 
-    /** Translates a specific utterance (e.g. one the user picked from history). */
+    /** Translates a specific utterance (e.g. one the user picked from history) and speaks it. */
     public CompletableFuture<Outcome> translate(Utterance u, boolean force) {
+        return translate(u, force, true, true);
+    }
+
+    /**
+     * @param speak     read the translation aloud on the headphones
+     * @param interrupt stop the translation being spoken (a request by the user); otherwise it waits
+     *                  its turn (automatic subtitles)
+     */
+    private CompletableFuture<Outcome> translate(Utterance u, boolean force, boolean speak, boolean interrupt) {
         String target = settings.nativeLanguage();
         TranslationMode mode = u.language() != null && sameLanguage(u.language(), target)
                 ? TranslationMode.CLARIFY : TranslationMode.TRANSLATE;
@@ -227,7 +263,7 @@ public final class TranslatorSession implements AutoCloseable {
                 context, settings.protectedTerms());
         listener.onTranslationStarted(u);
         CompletableFuture<TranslationResult> cf = c.translator().translate(req, force);
-        current.set(cf);
+        if (interrupt) current.set(cf); // Cancel is for what the user asked for, not for subtitles
         return cf.thenApply(r -> {
             if (!r.fromCache()) {
                 try {
@@ -237,7 +273,7 @@ public final class TranslatorSession implements AutoCloseable {
                 }
             }
             listener.onTranslation(u, r);
-            speak(new Playback(u, r.text(), target, null));
+            if (speak) speak(new Playback(u, r.text(), target, null), interrupt);
             return new Outcome(u, r);
         }).whenComplete((o, e) -> {
             current.compareAndSet(cf, null);
@@ -268,8 +304,8 @@ public final class TranslatorSession implements AutoCloseable {
 
     // ---------------------------------------------------------------- playback
 
-    private void speak(Playback p) {
-        c.privateSink().stop(); // a new translation interrupts the previous one
+    private void speak(Playback p, boolean interrupt) {
+        if (interrupt) c.privateSink().stop(); // a new translation interrupts the previous one
         ttsWorker.submit(() -> {
             try {
                 AudioClip clip = p.clip() != null ? p.clip()
@@ -293,7 +329,7 @@ public final class TranslatorSession implements AutoCloseable {
     public boolean replayLast() {
         Playback p = lastPlayback.get();
         if (p == null || closed) return false;
-        speak(p);
+        speak(p, true);
         return true;
     }
 

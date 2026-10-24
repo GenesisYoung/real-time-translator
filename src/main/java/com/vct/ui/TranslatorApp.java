@@ -36,6 +36,7 @@ public final class TranslatorApp extends Application implements MainWindow.Actio
     private SecretStore secrets;
     private SessionController controller;
     private MainWindow window;
+    private SubtitleOverlay overlay;
     private GlobalHotkeys hotkeys;
     private Tray tray;
     private boolean trayHintShown;
@@ -67,6 +68,9 @@ public final class TranslatorApp extends Application implements MainWindow.Actio
         }
 
         window = new MainWindow(stage, this);
+        overlay = new SubtitleOverlay(overlayStyle(), this::subtitlesMoved);
+        window.setOverlay(overlay);
+        overlay.open();
         controller = new SessionController(new DefaultEngines(), apiKey::get, window);
         applySettingsToUi();
         notices.addAll(registerHotkeys());
@@ -115,6 +119,33 @@ public final class TranslatorApp extends Application implements MainWindow.Actio
     @Override
     public void toggleRelay() {
         controller.toggleRelayPaused();
+    }
+
+    @Override
+    public void toggleSubtitles() {
+        controller.toggleSubtitles();
+    }
+
+    @Override
+    public void moveSubtitles() {
+        overlay.setMoving(!overlay.isMoving());
+        window.setMovingSubtitles(overlay.isMoving());
+    }
+
+    /** The user dragged the subtitles somewhere else: keep that place. */
+    private void subtitlesMoved(double x, double y) {
+        settings = settings.withSubtitles(settings.subtitles().at(x, y));
+        try {
+            settings.save(settingsFile);
+        } catch (IOException e) {
+            window.showNotice("Could not save the subtitles' position: " + e.getMessage(), true);
+        }
+    }
+
+    private SubtitleOverlay.Style overlayStyle() {
+        AppSettings.SubtitleSettings st = settings.subtitles();
+        return new SubtitleOverlay.Style(settings.nativeLanguage(), st.fontSize(), st.showOriginal(), st.holdSeconds(),
+                st.x(), st.y());
     }
 
     @Override
@@ -175,7 +206,10 @@ public final class TranslatorApp extends Application implements MainWindow.Actio
     private void applySettingsToUi() {
         window.setHotkeyHints(settings.translateHotkey(), settings.replayHotkey(), settings.relay().pauseHotkey(),
                 settings.relay().liveHotkey());
+        window.setSubtitlesHotkey(settings.subtitles().hotkey());
         window.setRemoteLabel(settings.remoteSource().label());
+        overlay.setStyle(overlayStyle());
+        controller.setSubtitles(settings.subtitles().enabled(), settings.subtitles().speak());
     }
 
     /** (Re)registers the hotkeys; returns problems to show. Global hotkeys exist on Windows only. */
@@ -187,6 +221,7 @@ public final class TranslatorApp extends Application implements MainWindow.Actio
         bindings.put(Hotkey.parse(settings.translateHotkey()), controller::translateLatest);
         bindings.put(Hotkey.parse(settings.replayHotkey()), controller::replay);
         bindings.put(Hotkey.parse(settings.relay().pauseHotkey()), controller::toggleRelayPaused);
+        bindings.put(Hotkey.parse(settings.subtitles().hotkey()), controller::toggleSubtitles);
         Map<Hotkey, GlobalHotkeys.Hold> holds = Map.of(Hotkey.parse(settings.relay().liveHotkey()),
                 new GlobalHotkeys.Hold(() -> controller.setLive(true), () -> controller.setLive(false)));
         try {

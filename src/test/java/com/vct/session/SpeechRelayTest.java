@@ -94,7 +94,7 @@ class SpeechRelayTest {
                 new TranslationService(provider, new TranslationService.RetryPolicy(1, Duration.ofMillis(1), Duration.ofMillis(1), Duration.ofSeconds(5))),
                 tts, cable, transcriptSink, echoGuard, live, new SpeechRelay.Listener() {
                     @Override public void onRelaySkipped(Utterance u, String reason) { events.add("skip " + u.id() + ": " + reason); }
-                    @Override public void onRelaySent(Utterance u) { events.add("sent " + u.id()); }
+                    @Override public void onRelaySent(Utterance u, com.vct.session.SpeechRelay.Delay d) { events.add("sent " + u.id()); }
                     @Override public void onRelayError(Utterance u, String m) { events.add("error " + u.id() + ": " + m); }
                     @Override public void onRelayLive(boolean on) { events.add("live " + on); }
                 });
@@ -237,6 +237,25 @@ class SpeechRelayTest {
         await("spoken after", () -> spoken.size() == 1);
         assertEquals(List.of("Okay."), spoken);
         assertEquals(1, requests.size(), "only the Chinese line was translated");
+    }
+
+    @Test
+    void reportsHowLongAfterTheUserStoppedTheTranslationWasHeard() throws Exception {
+        List<SpeechRelay.Delay> delays = new CopyOnWriteArrayList<>();
+        relay = new SpeechRelay(SpeechRelay.Config.defaults("en"),
+                new TranslationService(provider, new TranslationService.RetryPolicy(1, Duration.ofMillis(1), Duration.ofMillis(1), Duration.ofSeconds(5))),
+                tts, cable, transcriptSink, echoGuard, live, new SpeechRelay.Listener() {
+                    @Override public void onRelaySent(Utterance u, SpeechRelay.Delay d) { delays.add(d); }
+                });
+        Instant stopped = Instant.now().minusMillis(800); // the pause and Whisper took 0.8 s
+        relay.submit(mine("我们从左边绕过去。", "zh", stopped.minusSeconds(2), stopped)); // translation takes 0.3 s
+        await("sent", () -> delays.size() == 1);
+        SpeechRelay.Delay d = delays.getFirst();
+        assertTrue(d.recognition().toMillis() >= 800 && d.recognition().toMillis() < 1_500, d.toString());
+        assertTrue(d.translation().toMillis() >= 300, d.toString());
+        assertEquals(d.recognition().plus(d.translation()).plus(d.voice()), d.total());
+        assertEquals("2.1 s (recognition 0.8 + translation 0.7 + voice 0.6)",
+                new SpeechRelay.Delay(Duration.ofMillis(800), Duration.ofMillis(700), Duration.ofMillis(600)).toString());
     }
 
     @Test

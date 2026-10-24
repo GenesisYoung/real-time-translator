@@ -142,6 +142,30 @@ final class SettingsDialog {
         TextField replayKey = new TextField(s.replayHotkey());
         TextField pauseKey = new TextField(s.relay().pauseHotkey());
         TextField liveKey = new TextField(s.relay().liveHotkey());
+        TextField subtitlesKey = new TextField(s.subtitles().hotkey());
+
+        // Subtitles
+        AppSettings.SubtitleSettings st = s.subtitles();
+        CheckBox subtitlesOn = new CheckBox("Show what the others say as subtitles over the game");
+        subtitlesOn.setSelected(st.enabled());
+        CheckBox subtitlesSpeak = new CheckBox("Also read them aloud on my headphones");
+        subtitlesSpeak.setSelected(st.speak());
+        CheckBox subtitlesOriginal = new CheckBox("Show the original under the translation");
+        subtitlesOriginal.setSelected(st.showOriginal());
+        Slider fontSize = new Slider(16, 48, st.fontSize());
+        fontSize.setMajorTickUnit(2);
+        fontSize.setSnapToTicks(true);
+        Label fontSizeValue = new Label();
+        fontSizeValue.textProperty().bind(fontSize.valueProperty().map(v -> String.format(Locale.ROOT, "%.0f px", v.doubleValue())));
+        Slider hold = new Slider(3, 20, st.holdSeconds());
+        hold.setMajorTickUnit(1);
+        hold.setSnapToTicks(true);
+        Label holdValue = new Label();
+        holdValue.textProperty().bind(hold.valueProperty().map(v -> String.format(Locale.ROOT, "%.0f s", v.doubleValue())));
+        CheckBox resetPosition = new CheckBox("Put them back in the default place");
+        for (Node n : List.of(subtitlesSpeak, subtitlesOriginal, fontSize, hold)) n.disableProperty().bind(subtitlesOn.selectedProperty().not());
+        if (st.x() == null) resetPosition.setDisable(true); // already there
+        else resetPosition.disableProperty().bind(subtitlesOn.selectedProperty().not());
 
         // Translate my speech
         AppSettings.RelaySettings rs = s.relay();
@@ -189,6 +213,17 @@ final class SettingsDialog {
         row = field(g, row, "", gpu);
         row = field(g, row, "Voice folder", browse(voice, true, "Choose the voice folder"));
         row = field(g, row, "Speech speed", new HBox(10, grown(speed), speedValue));
+        row = section(g, row, "Subtitles over the game");
+        row = field(g, row, "", subtitlesOn);
+        row = field(g, row, "", hint("Every line of the others is translated as soon as it is recognized (one OpenAI "
+                + "request each). The hotkey hides them, and then nothing is translated. The game must run in "
+                + "borderless or windowed mode: exclusive full screen hides every other window."));
+        row = field(g, row, "", subtitlesSpeak);
+        row = field(g, row, "", subtitlesOriginal);
+        row = field(g, row, "Text size", new HBox(10, grown(fontSize), fontSizeValue));
+        row = field(g, row, "Each line stays", new HBox(10, grown(hold), holdValue));
+        row = field(g, row, "Position", resetPosition);
+        row = field(g, row, "", hint("To move them, press \"Move subtitles\" in the main window and drag them."));
         row = section(g, row, "Translate my speech");
         row = field(g, row, "", relayOn);
         row = field(g, row, "Others hear", wide(relayTarget));
@@ -202,6 +237,7 @@ final class SettingsDialog {
         row = field(g, row, "Replay", replayKey);
         row = field(g, row, "Pause my voice", pauseKey);
         row = field(g, row, "Talk live (hold)", liveKey);
+        row = field(g, row, "Subtitles on/off", subtitlesKey);
         row = field(g, row, "", hint("While you hold it, your real voice goes into the voice chat, not translated: "
                 + "for when you speak English or Japanese yourself. Keep all of its keys held while you talk."));
         row = field(g, row, "", hint("For example Ctrl+Alt+T, Shift+F9 or F13. They work while a game has focus."));
@@ -214,7 +250,8 @@ final class SettingsDialog {
 
         Node ok = d.getDialogPane().lookupButton(ButtonType.OK);
         ok.addEventFilter(ActionEvent.ACTION, e -> {
-            String problem = validate(translateKey.getText(), replayKey.getText(), pauseKey.getText(), liveKey.getText(), languages.getText(),
+            String problem = validate(List.of(translateKey.getText(), replayKey.getText(), pauseKey.getText(), liveKey.getText(),
+                    subtitlesKey.getText()), languages.getText(),
                     nativeLanguage.getText(), model.getEditor().getText(), whisper.getText(), voice.getText());
             if (problem == null) problem = validateRelay(relayOn.isSelected(), relayVoice.getEditor().getText(), relayModel.getText());
             if (problem != null) {
@@ -231,7 +268,11 @@ final class SettingsDialog {
                     Hotkey.parse(replayKey.getText()).toString(), s.contextLines(),
                     new AppSettings.RelaySettings(relayOn.isSelected(), relayTarget.getValue().id(), relayOutput.getValue().id(),
                             relayModel.getText().strip(), relayVoice.getEditor().getText().strip(),
-                            Hotkey.parse(pauseKey.getText()).toString(), Hotkey.parse(liveKey.getText()).toString()));
+                            Hotkey.parse(pauseKey.getText()).toString(), Hotkey.parse(liveKey.getText()).toString()),
+                    new AppSettings.SubtitleSettings(subtitlesOn.isSelected(), subtitlesSpeak.isSelected(),
+                            Math.round(fontSize.getValue()), subtitlesOriginal.isSelected(), (int) Math.round(hold.getValue()),
+                            resetPosition.isSelected() ? null : st.x(), resetPosition.isSelected() ? null : st.y(),
+                            Hotkey.parse(subtitlesKey.getText()).toString()));
             String typed = key.getText().strip();
             return new Result(out, typed.isEmpty() ? Optional.empty() : Optional.of(typed), removeKey.isSelected() && typed.isEmpty());
         });
@@ -239,11 +280,11 @@ final class SettingsDialog {
     }
 
     /** Returns a user-readable problem, or null if everything is valid. */
-    static String validate(String translateKey, String replayKey, String pauseKey, String liveKey, String languages,
+    static String validate(List<String> hotkeys, String languages,
                            String nativeLanguage, String model, String whisper, String voice) {
         List<Hotkey> keys = new ArrayList<>();
         try {
-            for (String k : List.of(translateKey, replayKey, pauseKey, liveKey)) keys.add(Hotkey.parse(k));
+            for (String k : hotkeys) keys.add(Hotkey.parse(k));
         } catch (IllegalArgumentException e) {
             return "Hotkey: " + e.getMessage();
         }

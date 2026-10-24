@@ -5,13 +5,12 @@ import com.vct.translate.OpenAiProvider;
 import com.vct.util.Json;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.LinkedHashMap;
@@ -53,7 +52,17 @@ public final class OpenAiTts implements TtsEngine {
 
     @Override
     public AudioClip synthesize(String text, String language, String voiceId, float speed) throws TtsException {
-        if (text == null || text.isBlank()) return new AudioClip(new float[0], PCM_RATE);
+        try (SpeechStream st = stream(text, language, voiceId, speed)) {
+            return AudioClip.fromPcm16(st.pcm16().readAllBytes(), PCM_RATE);
+        } catch (IOException e) {
+            throw new TtsException("Could not receive the speech from OpenAI: " + e.getMessage());
+        }
+    }
+
+    /** Returns once OpenAI starts sending audio; the rest arrives while it plays. */
+    @Override
+    public SpeechStream stream(String text, String language, String voiceId, float speed) throws TtsException {
+        if (text == null || text.isBlank()) return new SpeechStream(InputStream.nullInputStream(), PCM_RATE);
         String key = apiKey.get();
         if (key == null || key.isBlank()) throw new TtsException("Add your OpenAI API key in Settings.");
         Map<String, Object> body = new LinkedHashMap<>();
@@ -63,14 +72,14 @@ public final class OpenAiTts implements TtsEngine {
         body.put("response_format", "pcm");
         if (speed != 1.0f) body.put("speed", Math.clamp(speed, 0.25, 4.0));
         HttpRequest req = HttpRequest.newBuilder(baseUrl.resolve("audio/speech"))
-                .timeout(timeout)
+                .timeout(timeout) // until the audio starts
                 .header("Authorization", "Bearer " + key)
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(Json.write(body), StandardCharsets.UTF_8))
                 .build();
-        HttpResponse<byte[]> resp;
+        HttpResponse<InputStream> resp;
         try {
-            resp = http.send(req, HttpResponse.BodyHandlers.ofByteArray());
+            resp = http.send(req, HttpResponse.BodyHandlers.ofInputStream());
         } catch (HttpTimeoutException e) {
             throw new TtsException("OpenAI speech timed out after " + timeout.toSeconds() + " s.");
         } catch (InterruptedException e) {
@@ -80,16 +89,18 @@ public final class OpenAiTts implements TtsEngine {
             throw new TtsException("Could not reach OpenAI for speech: " + e.getMessage());
         }
         if (resp.statusCode() / 100 != 2) {
-            String detail = OpenAiProvider.errorMessage(new String(resp.body(), StandardCharsets.UTF_8));
+            String detail;
+            try (InputStream in = resp.body()) {
+                detail = OpenAiProvider.errorMessage(new String(in.readAllBytes(), StandardCharsets.UTF_8));
+            } catch (IOException e) {
+                detail = null;
+            }
             throw new TtsException("OpenAI speech failed (HTTP " + resp.statusCode() + (detail == null ? "" : ": " + detail) + ").");
         }
-        return new AudioClip(pcm16ToFloat(resp.body()), PCM_RATE);
+        return new SpeechStream(resp.body(), PCM_RATE);
     }
 
     static float[] pcm16ToFloat(byte[] pcm) {
-        ByteBuffer b = ByteBuffer.wrap(pcm).order(ByteOrder.LITTLE_ENDIAN);
-        float[] out = new float[pcm.length / 2];
-        for (int i = 0; i < out.length; i++) out[i] = b.getShort(2 * i) / 32768f;
-        return out;
+        return AudioClip.fromPcm16(pcm, PCM_RATE).samples();
     }
 }

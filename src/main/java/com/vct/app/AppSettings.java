@@ -22,6 +22,7 @@ import java.util.function.Function;
  * @param micDeviceId  capture device id, or null for the Windows default microphone
  * @param outputDevice part of the output device name for translations, or null for the default
  * @param relay        "translate my speech": the user's lines, translated into the voice chat
+ * @param subtitles    the others' lines, translated automatically and shown over the game
  */
 public record AppSettings(
         RemoteSource remoteSource,
@@ -37,7 +38,8 @@ public record AppSettings(
         String translateHotkey,
         String replayHotkey,
         int contextLines,
-        RelaySettings relay) {
+        RelaySettings relay,
+        SubtitleSettings subtitles) {
 
     public static final String API_KEY_SECRET = "openai-api-key";
 
@@ -57,6 +59,31 @@ public record AppSettings(
         }
     }
 
+    /**
+     * Subtitles over the game. While they are on, every line of the others is translated (one
+     * request each); while off (the hotkey), nothing is sent.
+     *
+     * @param speak       also read them aloud on the headphones
+     * @param holdSeconds how long a line stays after its translation arrived
+     * @param x           screen position of the subtitles' centre, or null for the default place
+     * @param y           screen position of their bottom edge, or null
+     */
+    public record SubtitleSettings(boolean enabled, boolean speak, double fontSize, boolean showOriginal,
+                                   int holdSeconds, Double x, Double y, String hotkey) {
+        public static SubtitleSettings defaults() {
+            return new SubtitleSettings(true, false, 26, true, 8, null, null, "Ctrl+Alt+S");
+        }
+
+        public SubtitleSettings at(Double x, Double y) {
+            return new SubtitleSettings(enabled, speak, fontSize, showOriginal, holdSeconds, x, y, hotkey);
+        }
+    }
+
+    public AppSettings withSubtitles(SubtitleSettings s) {
+        return new AppSettings(remoteSource, micDeviceId, outputDevice, nativeLanguage, recognizedLanguages, whisperModel,
+                whisperGpu, ttsVoice, ttsSpeed, openAiModel, translateHotkey, replayHotkey, contextLines, relay, s);
+    }
+
     public AppSettings {
         recognizedLanguages = List.copyOf(recognizedLanguages);
     }
@@ -64,7 +91,7 @@ public record AppSettings(
     public static AppSettings defaults() {
         return new AppSettings(RemoteSource.OTHERS, null, null, "zh", List.of("en", "ja", "zh"),
                 "models/whisper/ggml-large-v3-turbo-q8_0.bin", true, "models/tts/vits-piper-zh_CN-huayan-medium",
-                1.0, "gpt-4.1-mini", "Ctrl+Alt+T", "Ctrl+Alt+R", 2, RelaySettings.defaults());
+                1.0, "gpt-4.1-mini", "Ctrl+Alt+T", "Ctrl+Alt+R", 2, RelaySettings.defaults(), SubtitleSettings.defaults());
     }
 
     /** {@code %APPDATA%\VoiceChatTranslator\settings.json} on Windows, {@code ~/.config/...} elsewhere. */
@@ -104,18 +131,42 @@ public record AppSettings(
                 r.get("translateHotkey", d.translateHotkey(), v -> Hotkey.parse((String) v).toString()),
                 r.get("replayHotkey", d.replayHotkey(), v -> Hotkey.parse((String) v).toString()),
                 r.get("contextLines", d.contextLines(), v -> (int) range(((Number) v).intValue(), 0, 10)),
-                loadRelay(m.get("relay"), warnings));
+                loadRelay(m.get("relay"), warnings),
+                loadSubtitles(m.get("subtitles"), warnings));
         return new Loaded(s, List.copyOf(warnings));
+    }
+
+    private static SubtitleSettings loadSubtitles(Object value, List<String> warnings) {
+        SubtitleSettings d = SubtitleSettings.defaults();
+        Map<String, Object> m = nested(value, "subtitles", warnings);
+        if (m == null) return d;
+        Reader r = new Reader(m, warnings, "subtitles.");
+        return new SubtitleSettings(
+                r.get("enabled", d.enabled(), v -> (Boolean) v),
+                r.get("speak", d.speak(), v -> (Boolean) v),
+                r.get("fontSize", d.fontSize(), v -> range(((Number) v).doubleValue(), 12, 72)),
+                r.get("showOriginal", d.showOriginal(), v -> (Boolean) v),
+                r.get("holdSeconds", d.holdSeconds(), v -> (int) range(((Number) v).intValue(), 2, 60)),
+                r.get("x", d.x(), v -> v == null ? null : ((Number) v).doubleValue()),
+                r.get("y", d.y(), v -> v == null ? null : ((Number) v).doubleValue()),
+                r.get("hotkey", d.hotkey(), v -> Hotkey.parse((String) v).toString()));
+    }
+
+    /** A nested settings object as a map, or null (with a warning if it is there but not an object). */
+    private static Map<String, Object> nested(Object value, String name, List<String> warnings) {
+        if (!(value instanceof Map<?, ?> raw)) {
+            if (value != null) warnings.add("Setting \"" + name + "\" is invalid; using the defaults.");
+            return null;
+        }
+        Map<String, Object> m = new LinkedHashMap<>();
+        raw.forEach((k, v) -> m.put(String.valueOf(k), v));
+        return m;
     }
 
     private static RelaySettings loadRelay(Object value, List<String> warnings) {
         RelaySettings d = RelaySettings.defaults();
-        if (!(value instanceof Map<?, ?> raw)) {
-            if (value != null) warnings.add("Setting \"relay\" is invalid; using the defaults.");
-            return d;
-        }
-        Map<String, Object> m = new LinkedHashMap<>();
-        raw.forEach((k, v) -> m.put(String.valueOf(k), v));
+        Map<String, Object> m = nested(value, "relay", warnings);
+        if (m == null) return d;
         Reader r = new Reader(m, warnings, "relay.");
         return new RelaySettings(
                 r.get("enabled", d.enabled(), v -> (Boolean) v),
@@ -152,6 +203,16 @@ public record AppSettings(
         rl.put("pauseHotkey", relay.pauseHotkey());
         rl.put("liveHotkey", relay.liveHotkey());
         m.put("relay", rl);
+        Map<String, Object> st = new LinkedHashMap<>();
+        st.put("enabled", subtitles.enabled());
+        st.put("speak", subtitles.speak());
+        st.put("fontSize", subtitles.fontSize());
+        st.put("showOriginal", subtitles.showOriginal());
+        st.put("holdSeconds", subtitles.holdSeconds());
+        st.put("x", subtitles.x());
+        st.put("y", subtitles.y());
+        st.put("hotkey", subtitles.hotkey());
+        m.put("subtitles", st);
         Files.createDirectories(file.toAbsolutePath().getParent());
         Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
         Files.writeString(tmp, Json.write(m), StandardCharsets.UTF_8);

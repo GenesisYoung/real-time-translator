@@ -188,6 +188,44 @@ class TranslatorSessionTest {
     }
 
     @Test
+    void subtitlesTranslateEveryLineOfTheOthersButNotTheUsersOwn() throws Exception {
+        startSession(SessionSettings.defaults("en"));
+        session.setAutoTranslate(true, false);
+        sttScript.add("Wir gehen links.");
+        sttScript.add("[en]Already English.");  // the native language: shown as it is
+        sttScript.add("Ja.");                   // 2 letters: still translated
+        sttScript.add("[en]this is me");        // the user's own microphone
+        speak(Source.REMOTE, 600, 900);
+        speak(Source.REMOTE, 600, 900);
+        speak(Source.REMOTE, 600, 900);
+        speak(Source.MIC, 600, 900);
+        awaitUtterances(4);
+        long deadline = System.currentTimeMillis() + 3000;
+        while (sent.size() < 2 && System.currentTimeMillis() < deadline) Thread.sleep(10);
+        assertEquals(List.of("Wir gehen links.", "Ja."), sent.stream().map(TranslationRequest::text).toList());
+        assertNull(played.poll(200, TimeUnit.MILLISECONDS), "not read aloud unless asked");
+
+        session.setAutoTranslate(false, false);
+        sttScript.add("Noch eine Zeile.");
+        speak(Source.REMOTE, 600, 900);
+        awaitUtterances(5);
+        Thread.sleep(100);
+        assertEquals(2, sent.size(), "nothing translated once switched off");
+    }
+
+    @Test
+    void subtitlesCanBeReadAloudOneAfterAnother() throws Exception {
+        startSession(SessionSettings.defaults("en"));
+        session.setAutoTranslate(true, true);
+        sttScript.add("Erste Zeile.");
+        sttScript.add("Zweite Zeile.");
+        speak(Source.REMOTE, 600, 900);
+        speak(Source.REMOTE, 600, 900);
+        assertNotNull(played.poll(3, TimeUnit.SECONDS));
+        assertNotNull(played.poll(3, TimeUnit.SECONDS), "both are spoken: the second waits for the first");
+    }
+
+    @Test
     void sameLanguageUsesClarifyMode() throws Exception {
         startSession(SessionSettings.defaults("en"));
         sttScript.add("[en]That's a piece of cake.");

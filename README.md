@@ -3,7 +3,7 @@
 On-demand voice-chat translation for Windows 11 (personal use). Speech recognition, VAD and
 TTS run locally; only the text of an utterance you explicitly ask to translate is sent to OpenAI.
 
-## Status: Phase 2 (translate my speech)
+## Status: Phase 3 (subtitles over the game)
 
 | Component | State |
 |---|---|
@@ -30,10 +30,12 @@ TTS run locally; only the text of an utterance you explicitly ask to translate i
 | Settings (JSON in `%APPDATA%`) and session controller | Implemented, unit-tested with fake engines |
 | JavaFX window, settings dialog, tray icon (`gradlew run`) | Implemented; runs on Windows 11 |
 | Translate my speech: automatic, English or Japanese, into VB-CABLE (`SpeechRelay`, OpenAI speech) | Works on Windows with Discord (setup: [docs/translate-my-speech.md](docs/translate-my-speech.md)) |
-| Talk live: hold Ctrl+Alt+V to send your real voice with no delay (`LiveVoice`, held hotkeys) | Implemented, unit-tested with fakes. **Not yet run on Windows** |
+| Talk live: hold Ctrl+Alt+V to send your real voice with no delay (`LiveVoice`, held hotkeys) | Works on Windows with Discord |
+| Lower delay for translate my speech: streamed OpenAI voice, 450 ms end of line, warm connection | Implemented, unit-tested. **Not yet measured on Windows** |
+| Subtitles over the game: others' lines translated automatically into a click-through overlay (`SubtitleOverlay`) | Implemented, unit-tested, rendered in the UI preview. **Not yet run on Windows** (see [docs/subtitles.md](docs/subtitles.md)) |
 
-97 tests, all passing on JDK 25 (Linux x64) with every engine present. Without the optional native
-libraries and voices, 6 of them are skipped (Whisper binding, TTS synthesis, playback). The step 2 suite
+145 tests, all passing on JDK 25 (Linux x64). Without the optional native
+libraries, voices and Windows, 9 of them are skipped (Whisper binding, TTS synthesis, playback). The step 2 suite
 (66 tests) also passed on Windows 11.
 
 The Discord-only capture mode (`--remote discord`) has not been tried with Discord running yet.
@@ -60,6 +62,9 @@ gradlew.bat run
 3. When someone speaks, press **Ctrl+Alt+T**, even while a game has focus. You hear the Chinese
    translation, and it appears in the window. **Ctrl+Alt+R** replays it. Double-click a line to translate it.
 4. Closing the window keeps the app in the tray, and the hotkeys keep working. Quit from the tray menu.
+
+To see everything the others say as Chinese subtitles over the game, see
+[docs/subtitles.md](docs/subtitles.md) (on by default; **Ctrl+Alt+S** shows or hides them).
 
 To have the others hear your speech translated into English or Japanese, see
 [docs/translate-my-speech.md](docs/translate-my-speech.md) (needs the free VB-CABLE driver).

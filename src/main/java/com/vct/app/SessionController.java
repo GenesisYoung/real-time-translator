@@ -37,6 +37,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
 /**
@@ -57,6 +59,9 @@ public final class SessionController implements AutoCloseable {
         default void onRelayState(boolean active, boolean paused, String targetLanguage) {}
 
         default void onCaptureState(Source source, CaptureLoop.State state, String detail) {}
+
+        /** Subtitles over the game switched on or off. */
+        default void onSubtitlesState(boolean on) {}
 
         /** Information for the user that is not an error, e.g. "nothing to translate yet". */
         default void onNotice(String message) {}
@@ -110,6 +115,18 @@ public final class SessionController implements AutoCloseable {
     private TranslationService translation;
     private CaptureLoop micLoop;
     private CaptureLoop remoteLoop;
+
+    /**
+     * A pause this long ends one of the user's lines (others' lines: 700 ms). Shorter means the
+     * translation starts sooner; a long pause in the middle of a sentence then splits it in two.
+     */
+    static final int MIC_END_SILENCE_MS = 450;
+
+    /** Keeps the connection to OpenAI open while translate-my-speech runs; null otherwise. */
+    private ScheduledExecutorService warmer;
+
+    private volatile boolean subtitles;
+    private volatile boolean subtitlesSpeak;
 
     private volatile TranslatorSession session;
     private volatile SpeechRelay relay;
@@ -191,12 +208,13 @@ public final class SessionController implements AutoCloseable {
         FeedbackGuard echoGuard = FeedbackGuard.defaults(clock);
         UtteranceSegmenter.Config seg = UtteranceSegmenter.Config.defaults();
         TranslatorSession.Components c = new TranslatorSession.Components(vad,
-                Map.of(Source.REMOTE, seg, Source.MIC, seg), recognizer, HallucinationFilter.defaults(), tts,
+                Map.of(Source.REMOTE, seg, Source.MIC, seg.withEndSilenceMs(MIC_END_SILENCE_MS)), recognizer, HallucinationFilter.defaults(), tts,
                 engines.sink(s), translation, transcript, new ConversationBuffer(50, Duration.ofMinutes(15), clock),
                 echoGuard, clock);
         SessionSettings settings = new SessionSettings(s.nativeLanguage(), new LinkedHashSet<>(s.recognizedLanguages()),
                 List.of(), s.contextLines(), Duration.ofMillis(1500), null, (float) s.ttsSpeed());
         relay = startRelay(s, transcript, echoGuard, clock);
+        if (relay != null) keepWarm(provider);
         TranslatorSession started = new TranslatorSession(c, settings, new Forwarding(listener) {
             @Override
             public void onUtterance(Utterance u) {
@@ -206,6 +224,7 @@ public final class SessionController implements AutoCloseable {
             }
         });
         session = started;
+        applySubtitles(started);
         SpeechRelay r = relay;
         listener.onRelayState(r != null, false, r == null ? null : r.targetLanguage());
 
@@ -254,6 +273,35 @@ public final class SessionController implements AutoCloseable {
         return null;
     }
 
+    /**
+     * Subtitles from the settings: on or off, and whether they are also read aloud. Applies to the
+     * running session at once.
+     */
+    public void setSubtitles(boolean on, boolean speak) {
+        subtitles = on;
+        subtitlesSpeak = speak;
+        applySubtitles(session);
+        listener.onSubtitlesState(on);
+    }
+
+    /** Shows or hides the subtitles (the hotkey). While hidden, nothing is translated. */
+    public void toggleSubtitles() {
+        setSubtitles(!subtitles, subtitlesSpeak);
+        listener.onNotice(subtitles ? "Subtitles: on. Everything the others say is translated."
+                : "Subtitles: off. Nothing is translated until you press Translate.");
+    }
+
+    public boolean subtitlesOn() {
+        return subtitles;
+    }
+
+    private void applySubtitles(TranslatorSession s) {
+        if (s == null) return;
+        boolean on = subtitles && apiKey.get() != null && !apiKey.get().isBlank();
+        if (subtitles && !on) listener.onNotice("Add your OpenAI API key in Settings to translate the subtitles.");
+        s.setAutoTranslate(on, subtitlesSpeak);
+    }
+
     /** Pauses or resumes "translate my speech" (the pause hotkey). */
     public void toggleRelayPaused() {
         SpeechRelay r = relay;
@@ -280,7 +328,24 @@ public final class SessionController implements AutoCloseable {
         }
     }
 
+    /**
+     * Opens the connection to OpenAI now, and keeps using it while the session runs, so the first
+     * line after a quiet minute does not wait for a new connection. Listing models costs nothing.
+     */
+    private void keepWarm(TranslationProvider provider) {
+        warmer = Executors.newSingleThreadScheduledExecutor(Thread.ofVirtual().name("vct-keep-warm").factory());
+        warmer.scheduleWithFixedDelay(() -> {
+            try {
+                provider.listModels();
+            } catch (Exception e) {
+                // only a warm-up: a real problem shows up on the next translation
+            }
+        }, 0, 45, TimeUnit.SECONDS);
+    }
+
     private void stopNow() {
+        if (warmer != null) warmer.shutdownNow();
+        warmer = null;
         TranslatorSession s = session;
         if (s == null && micLoop == null && remoteLoop == null) return;
         setStatus(Status.STOPPING, "Stopping...");
