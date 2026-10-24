@@ -120,7 +120,7 @@ class SessionControllerTest {
 
         AppSettings other = new AppSettings(s.remoteSource(), s.micDeviceId(), s.outputDevice(), s.nativeLanguage(),
                 s.recognizedLanguages(), "models/whisper/other.bin", s.whisperGpu(), s.ttsVoice(), s.ttsSpeed(),
-                s.openAiModel(), s.translateHotkey(), s.replayHotkey(), s.contextLines(), s.relay(), s.subtitles());
+                s.openAiModel(), s.translateHotkey(), s.replayHotkey(), s.contextLines(), s.relay(), s.subtitles(), s.listenOnStart());
         c.start(other).get(5, TimeUnit.SECONDS);
         assertEquals(2, engines.recognizersOpened.get());
         assertEquals(1, engines.recognizersClosed.get(), "the replaced recognizer was freed");
@@ -145,7 +145,7 @@ class SessionControllerTest {
                 d.recognizedLanguages(), d.whisperModel(), d.whisperGpu(), d.ttsVoice(), d.ttsSpeed(), d.openAiModel(),
                 d.translateHotkey(), d.replayHotkey(), d.contextLines(),
                 new AppSettings.RelaySettings(on, "ja", r.outputDevice(), r.ttsModel(), r.voice(), r.pauseHotkey(), r.liveHotkey()),
-                d.subtitles());
+                d.subtitles(), d.listenOnStart());
     }
 
     @Test
@@ -194,6 +194,18 @@ class SessionControllerTest {
         c.toggleSubtitles();
         assertTrue(events.contains("subtitles false"), events.toString());
         assertFalse(c.subtitlesOn());
+    }
+
+    @Test
+    void aNewSessionNeverShowsTheTranslationsOfThePreviousOne() throws Exception {
+        // Line ids start again at r-0001; the earlier session's r-0001 must not be taken from the cache.
+        SessionController c = controller();
+        c.setSubtitles(true, false);
+        c.start(AppSettings.defaults()).get(5, TimeUnit.SECONDS);
+        await("first session translated", () -> !translated.isEmpty());
+        c.start(AppSettings.defaults()).get(5, TimeUnit.SECONDS);
+        await("second session translated", () -> translated.size() >= 2);
+        assertFalse(translated.get(1).fromCache(), "asked again, not taken from the earlier session");
     }
 
     @Test

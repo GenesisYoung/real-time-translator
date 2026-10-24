@@ -23,6 +23,7 @@ import java.util.function.Function;
  * @param outputDevice part of the output device name for translations, or null for the default
  * @param relay        "translate my speech": the user's lines, translated into the voice chat
  * @param subtitles    the others' lines, translated automatically and shown over the game
+ * @param listenOnStart start a session as soon as the app opens (e.g. when it starts with Windows)
  */
 public record AppSettings(
         RemoteSource remoteSource,
@@ -39,7 +40,8 @@ public record AppSettings(
         String replayHotkey,
         int contextLines,
         RelaySettings relay,
-        SubtitleSettings subtitles) {
+        SubtitleSettings subtitles,
+        boolean listenOnStart) {
 
     public static final String API_KEY_SECRET = "openai-api-key";
 
@@ -81,7 +83,8 @@ public record AppSettings(
 
     public AppSettings withSubtitles(SubtitleSettings s) {
         return new AppSettings(remoteSource, micDeviceId, outputDevice, nativeLanguage, recognizedLanguages, whisperModel,
-                whisperGpu, ttsVoice, ttsSpeed, openAiModel, translateHotkey, replayHotkey, contextLines, relay, s);
+                whisperGpu, ttsVoice, ttsSpeed, openAiModel, translateHotkey, replayHotkey, contextLines, relay, s,
+                listenOnStart);
     }
 
     public AppSettings {
@@ -91,7 +94,7 @@ public record AppSettings(
     public static AppSettings defaults() {
         return new AppSettings(RemoteSource.OTHERS, null, null, "zh", List.of("en", "ja", "zh"),
                 "models/whisper/ggml-large-v3-turbo-q8_0.bin", true, "models/tts/vits-piper-zh_CN-huayan-medium",
-                1.0, "gpt-4.1-mini", "Ctrl+Alt+T", "Ctrl+Alt+R", 2, RelaySettings.defaults(), SubtitleSettings.defaults());
+                1.0, "gpt-4.1-mini", "Ctrl+Alt+T", "Ctrl+Alt+R", 2, RelaySettings.defaults(), SubtitleSettings.defaults(), false);
     }
 
     /** {@code %APPDATA%\VoiceChatTranslator\settings.json} on Windows, {@code ~/.config/...} elsewhere. */
@@ -132,7 +135,8 @@ public record AppSettings(
                 r.get("replayHotkey", d.replayHotkey(), v -> Hotkey.parse((String) v).toString()),
                 r.get("contextLines", d.contextLines(), v -> (int) range(((Number) v).intValue(), 0, 10)),
                 loadRelay(m.get("relay"), warnings),
-                loadSubtitles(m.get("subtitles"), warnings));
+                loadSubtitles(m.get("subtitles"), warnings),
+                r.get("listenOnStart", d.listenOnStart(), v -> (Boolean) v));
         return new Loaded(s, List.copyOf(warnings));
     }
 
@@ -213,6 +217,7 @@ public record AppSettings(
         st.put("y", subtitles.y());
         st.put("hotkey", subtitles.hotkey());
         m.put("subtitles", st);
+        m.put("listenOnStart", listenOnStart);
         Files.createDirectories(file.toAbsolutePath().getParent());
         Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
         Files.writeString(tmp, Json.write(m), StandardCharsets.UTF_8);

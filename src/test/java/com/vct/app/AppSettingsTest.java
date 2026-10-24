@@ -28,7 +28,7 @@ class AppSettingsTest {
                 List.of("en", "ja"), "C:\\models\\w.bin", false, "voices/zh", 1.25, "gpt-4.1-mini",
                 "Ctrl+Shift+F9", "Alt+F10", 0,
                 new AppSettings.RelaySettings(true, "ja", "CABLE Input (VB-Audio Virtual Cable)", "tts-1", "nova", "Ctrl+Alt+M", "Shift+F9"),
-                new AppSettings.SubtitleSettings(false, true, 32.5, false, 12, -1280.5, 900.0, "Ctrl+Alt+F1"));
+                new AppSettings.SubtitleSettings(false, true, 32.5, false, 12, -1280.5, 900.0, "Ctrl+Alt+F1"), true);
         s.save(f);
         assertEquals(new AppSettings.Loaded(s, List.of()), AppSettings.load(f));
         assertFalse(Files.exists(dir.resolve("sub/settings.json.tmp")), "temporary file removed");

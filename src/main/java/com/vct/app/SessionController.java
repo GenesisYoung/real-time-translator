@@ -191,7 +191,8 @@ public final class SessionController implements AutoCloseable {
         if (translation == null) {
             translation = new TranslationService(provider, TranslationService.RetryPolicy.defaults());
         } else {
-            translation.setProvider(provider); // keeps the cache of earlier translations
+            translation.setProvider(provider);
+            translation.clearCache(); // line ids start again at r-0001 in every session
         }
 
         Clock clock = engines.clock();

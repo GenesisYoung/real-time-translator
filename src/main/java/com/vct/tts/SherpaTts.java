@@ -1,5 +1,6 @@
 package com.vct.tts;
 
+import com.vct.util.AppHome;
 import com.vct.audio.AudioClip;
 
 import java.lang.foreign.Arena;
@@ -98,12 +99,13 @@ public final class SherpaTts implements TtsEngine {
     }
 
     /**
-     * Loads the library from {@code -Dvct.tts.lib}, or from {@code native/sherpa-onnx}, then the voice.
+     * Loads the library from {@code -Dvct.tts.lib}, or from {@code native/sherpa-onnx} in the
+     * {@link AppHome app folder}, then the voice.
      */
     public static SherpaTts load(Path voiceDir) throws TtsException {
         String configured = System.getProperty(LIBRARY_PROPERTY);
         Path lib = configured != null ? Path.of(configured)
-                : Path.of("native", "sherpa-onnx", System.mapLibraryName("sherpa-onnx-c-api"));
+                : AppHome.resolve("native", "sherpa-onnx", System.mapLibraryName("sherpa-onnx-c-api"));
         return load(lib, voiceDir, 2);
     }
 

@@ -41,10 +41,20 @@ public final class TranslatorApp extends Application implements MainWindow.Actio
     private Tray tray;
     private boolean trayHintShown;
     private boolean quitting;
+    /** Set by {@link Launcher}, which makes sure only one copy runs. */
+    static volatile SingleInstance instance;
+    private static volatile TranslatorApp running;
+
+    /** Another copy was started: show this one's window instead. */
+    static void showRunning() {
+        TranslatorApp app = running;
+        if (app != null) Platform.runLater(app::showWindow);
+    }
 
     @Override
     public void start(Stage stage) {
         Platform.setImplicitExit(false); // the tray keeps the app alive while the window is hidden
+        running = this;
         List<String> notices = new ArrayList<>();
         try {
             AppSettings.Loaded loaded = AppSettings.load(settingsFile);
@@ -68,6 +78,7 @@ public final class TranslatorApp extends Application implements MainWindow.Actio
         }
 
         window = new MainWindow(stage, this);
+        stage.getIcons().setAll(AppIcon.forWindows());
         overlay = new SubtitleOverlay(overlayStyle(), this::subtitlesMoved);
         window.setOverlay(overlay);
         overlay.open();
@@ -90,8 +101,13 @@ public final class TranslatorApp extends Application implements MainWindow.Actio
             }
         });
         if (!notices.isEmpty()) window.showNotice(String.join("\n", notices), false);
-        stage.show();
+        // Started by Windows at sign-in: only the tray icon, no window.
+        boolean inTray = tray != null && getParameters().getRaw().contains("--tray");
+        if (inTray) trayHintShown = true;
+        else stage.show();
+        if (settings.listenOnStart()) controller.start(settings);
     }
+
 
     // ------------------------------------------------------------------ actions
 
@@ -175,6 +191,11 @@ public final class TranslatorApp extends Application implements MainWindow.Actio
 
     private void applySettings(SettingsDialog.Result r) {
         List<String> notices = new ArrayList<>();
+        try {
+            WindowsStartup.set(r.startWithWindows());
+        } catch (IOException e) {
+            notices.add("Could not change \"Start with Windows\": " + e.getMessage());
+        }
         settings = r.settings();
         try {
             settings.save(settingsFile);
@@ -236,6 +257,7 @@ public final class TranslatorApp extends Application implements MainWindow.Actio
     }
 
     private void showWindow() {
+        if (window == null) return; // still starting
         Stage s = window.stage();
         s.show();
         s.setIconified(false);
@@ -255,6 +277,15 @@ public final class TranslatorApp extends Application implements MainWindow.Actio
     }
 
     private synchronized void shutdown() {
+        SingleInstance instance = TranslatorApp.instance;
+        TranslatorApp.instance = null;
+        if (instance != null) {
+            try {
+                instance.close();
+            } catch (IOException ignored) {
+                // exiting anyway
+            }
+        }
         if (hotkeys != null) hotkeys.close();
         hotkeys = null;
         if (controller != null) controller.close();

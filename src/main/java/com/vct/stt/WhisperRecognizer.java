@@ -1,5 +1,6 @@
 package com.vct.stt;
 
+import com.vct.util.AppHome;
 import com.vct.audio.PcmSegment;
 import com.vct.util.Json;
 
@@ -87,8 +88,8 @@ public final class WhisperRecognizer implements SpeechRecognizer {
         String configured = System.getProperty(LIBRARY_PROPERTY);
         Path lib = configured != null ? Path.of(configured)
                 : System.getProperty("os.name").startsWith("Windows")
-                ? Path.of("native", "stt", "build", "Release", "vct_stt.dll")
-                : Path.of("native", "stt", "build", "vct_stt" + (System.getProperty("os.name").startsWith("Mac") ? ".dylib" : ".so"));
+                ? AppHome.resolve("native", "stt", "build", "Release", "vct_stt.dll")
+                : AppHome.resolve("native", "stt", "build", "vct_stt" + (System.getProperty("os.name").startsWith("Mac") ? ".dylib" : ".so"));
         return open(lib, model, useGpu, defaultThreads());
     }
 
