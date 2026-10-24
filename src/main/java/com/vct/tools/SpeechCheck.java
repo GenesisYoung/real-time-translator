@@ -5,7 +5,7 @@ import com.vct.audio.JavaSoundSink;
 import com.vct.buffer.ConversationBuffer;
 import com.vct.capture.CaptureLoop;
 import com.vct.capture.CaptureTarget;
-import com.vct.capture.DiscordLocator;
+import com.vct.capture.RemoteSource;
 import com.vct.capture.WasapiBackend;
 import com.vct.feedback.FeedbackGuard;
 import com.vct.model.Source;
@@ -282,13 +282,7 @@ public final class SpeechCheck {
             }
         });
 
-        String remote = o.get("remote", "others");
-        CaptureLoop.TargetResolver remoteTarget = switch (remote) {
-            case "discord" -> DiscordLocator.resolver();
-            case "system" -> CaptureLoop.TargetResolver.of(new CaptureTarget.Loopback(null));
-            default -> CaptureLoop.TargetResolver.of(
-                    new CaptureTarget.ProcessTree(ProcessHandle.current().pid(), CaptureTarget.ProcessTree.Mode.EXCLUDE));
-        };
+        CaptureLoop.TargetResolver remoteTarget = RemoteSource.parse(o.get("remote", "others")).resolver();
         CaptureLoop.Listener states = (state, detail) -> System.out.println("   (" + state + (detail == null ? "" : ": " + detail) + ")");
         CaptureLoop mic = new CaptureLoop("mic", backend, CaptureLoop.TargetResolver.of(new CaptureTarget.Device(null)),
                 x -> session.onAudio(Source.MIC, x), states, CaptureLoop.Config.defaults()).start();

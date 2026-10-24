@@ -1,5 +1,6 @@
 plugins {
     java
+    application
 }
 
 group = "com.vct"
@@ -10,7 +11,18 @@ repositories {
     mavenCentral()
 }
 
+// JavaFX ships one native jar per operating system.
+val javafxPlatform = System.getProperty("os.name").let { os ->
+    when {
+        os.startsWith("Windows") -> "win"
+        os.startsWith("Mac") -> if (System.getProperty("os.arch") == "aarch64") "mac-aarch64" else "mac"
+        else -> "linux"
+    }
+}
+
 dependencies {
+    // UI. 25.x is built for Java 23 class files, matching options.release below.
+    listOf("base", "graphics", "controls").forEach { implementation("org.openjfx:javafx-$it:25.0.4:$javafxPlatform") }
     // Runs Silero VAD on the CPU. The jar bundles native libraries for Windows, Linux and macOS.
     // Keep the minor version equal to the ONNX Runtime inside sherpa-onnx (TTS; 1.13.8 ships 1.28.2):
     // Windows loads only one onnxruntime.dll per process, and both libraries then share it.
@@ -101,4 +113,25 @@ tasks.register<JavaExec>("speechCheck") {
     systemProperty("file.encoding", "UTF-8")
     systemProperty("stdout.encoding", "UTF-8")
     standardInput = System.`in`
+}
+
+application {
+    mainClass = "com.vct.ui.Launcher"
+    applicationDefaultJvmArgs = listOf("--enable-native-access=ALL-UNNAMED")
+}
+
+// gradlew run: starts the app from the repository folder, where models\ and native\ are.
+tasks.named<JavaExec>("run") {
+    systemProperty("vct.audio.lib", file("native/build/Release/vct_audio.dll").path)
+    systemProperty("file.encoding", "UTF-8")
+}
+
+// Development aid: renders the main window and settings with sample data to build/ui-preview/*.png.
+// On Linux without a display: xvfb-run ./gradlew uiPreview
+tasks.register<JavaExec>("uiPreview") {
+    group = "verification"
+    description = "Saves screenshots of the main window and the settings dialog with sample data."
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass = "com.vct.ui.UiPreview"
+    jvmArgs("--enable-native-access=ALL-UNNAMED")
 }

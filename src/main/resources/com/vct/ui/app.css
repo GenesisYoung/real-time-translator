@@ -1,0 +1,66 @@
+.root {
+    -fx-font-size: 13px;
+    -fx-font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+.status {
+    -fx-font-weight: bold;
+}
+
+.notice {
+    -fx-text-fill: -fx-mid-text-color;
+}
+
+.notice.error {
+    -fx-text-fill: #c62828;
+}
+
+.dot.off {
+    -fx-fill: #9e9e9e;
+}
+
+.dot.ok {
+    -fx-fill: #2e7d32;
+}
+
+.dot.warn {
+    -fx-fill: #ef6c00;
+}
+
+.line-header {
+    -fx-font-size: 11px;
+    -fx-text-fill: -fx-mid-text-color;
+}
+
+.line-text {
+    -fx-font-size: 13px;
+}
+
+.line-translation {
+    -fx-font-size: 16px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #1565c0;
+}
+
+.list-cell:selected .line-translation,
+.list-cell:selected .line-header {
+    -fx-text-fill: -fx-selection-bar-text;
+}
+
+.list-cell.mine .line-text {
+    -fx-text-fill: #616161;
+}
+
+.settings-section {
+    -fx-font-weight: bold;
+    -fx-padding: 8 0 0 0;
+}
+
+.hint {
+    -fx-font-size: 11px;
+    -fx-text-fill: -fx-mid-text-color;
+}
+
+.error-text {
+    -fx-text-fill: #c62828;
+}
