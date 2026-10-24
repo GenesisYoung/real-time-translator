@@ -27,7 +27,7 @@ class AppSettingsTest {
         AppSettings s = new AppSettings(RemoteSource.DISCORD, "{0.0.1.00000000}.{abc}", "WH-CH520", "zh",
                 List.of("en", "ja"), "C:\\models\\w.bin", false, "voices/zh", 1.25, "gpt-4.1-mini",
                 "Ctrl+Shift+F9", "Alt+F10", 0,
-                new AppSettings.RelaySettings(true, "ja", "CABLE Input (VB-Audio Virtual Cable)", "tts-1", "nova", "Ctrl+Alt+M"));
+                new AppSettings.RelaySettings(true, "ja", "CABLE Input (VB-Audio Virtual Cable)", "tts-1", "nova", "Ctrl+Alt+M", "Shift+F9"));
         s.save(f);
         assertEquals(new AppSettings.Loaded(s, List.of()), AppSettings.load(f));
         assertFalse(Files.exists(dir.resolve("sub/settings.json.tmp")), "temporary file removed");

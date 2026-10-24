@@ -48,11 +48,12 @@ public record AppSettings(
      * @param targetLanguage what the others hear ("en" or "ja"), chosen per session
      * @param ttsModel       OpenAI speech model, e.g. gpt-4o-mini-tts
      * @param voice          OpenAI voice, e.g. alloy
+     * @param liveHotkey     held down, sends the user's real voice instead (for speaking the language directly)
      */
     public record RelaySettings(boolean enabled, String targetLanguage, String outputDevice, String ttsModel,
-                                String voice, String pauseHotkey) {
+                                String voice, String pauseHotkey, String liveHotkey) {
         public static RelaySettings defaults() {
-            return new RelaySettings(false, "en", "CABLE Input", "gpt-4o-mini-tts", "alloy", "Ctrl+Alt+M");
+            return new RelaySettings(false, "en", "CABLE Input", "gpt-4o-mini-tts", "alloy", "Ctrl+Alt+M", "Ctrl+Alt+V");
         }
     }
 
@@ -122,7 +123,8 @@ public record AppSettings(
                 r.get("outputDevice", d.outputDevice(), v -> (String) v),
                 r.get("ttsModel", d.ttsModel(), v -> nonBlank((String) v)),
                 r.get("voice", d.voice(), v -> nonBlank((String) v)),
-                r.get("pauseHotkey", d.pauseHotkey(), v -> Hotkey.parse((String) v).toString()));
+                r.get("pauseHotkey", d.pauseHotkey(), v -> Hotkey.parse((String) v).toString()),
+                r.get("liveHotkey", d.liveHotkey(), v -> Hotkey.parse((String) v).toString()));
     }
 
     /** Writes atomically: a crash while saving never leaves a half-written file. */
@@ -148,6 +150,7 @@ public record AppSettings(
         rl.put("ttsModel", relay.ttsModel());
         rl.put("voice", relay.voice());
         rl.put("pauseHotkey", relay.pauseHotkey());
+        rl.put("liveHotkey", relay.liveHotkey());
         m.put("relay", rl);
         Files.createDirectories(file.toAbsolutePath().getParent());
         Path tmp = file.resolveSibling(file.getFileName() + ".tmp");

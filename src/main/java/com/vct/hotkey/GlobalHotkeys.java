@@ -16,11 +16,14 @@ import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static java.lang.foreign.ValueLayout.ADDRESS;
 import static java.lang.foreign.ValueLayout.JAVA_INT;
 import static java.lang.foreign.ValueLayout.JAVA_LONG;
+import static java.lang.foreign.ValueLayout.JAVA_SHORT;
 
 /**
  * System-wide hotkeys through Windows RegisterHotKey, which works while a game has focus and, unlike
@@ -29,6 +32,10 @@ import static java.lang.foreign.ValueLayout.JAVA_LONG;
  * <p>Windows delivers WM_HOTKEY to the message queue of the thread that registered the key, so a
  * dedicated thread registers them and runs a message loop. Actions run on another thread, so a slow
  * action never delays the next key press.
+ *
+ * <p>Windows reports only the press of a hotkey. For keys that are held ({@link Hold}), the release
+ * is found by polling the key's state (GetAsyncKeyState) until it is up: reading one key's state is
+ * not a keyboard hook either.
  */
 @SuppressWarnings("restricted") // calling Windows APIs is this class's purpose
 public final class GlobalHotkeys implements AutoCloseable {
@@ -38,8 +45,14 @@ public final class GlobalHotkeys implements AutoCloseable {
     private static final int ERROR_HOTKEY_ALREADY_REGISTERED = 1409;
     // MSG, x64: measured with offsetof() (48 bytes; message at 8, wParam at 16).
     private static final long MSG_SIZE = 48, MSG_MESSAGE = 8, MSG_WPARAM = 16;
+    private static final long RELEASE_POLL_MS = 15;
+
+    /** A key that does something while it is held down. */
+    public record Hold(Runnable press, Runnable release) {}
 
     private final Map<Hotkey, Runnable> bindings;
+    private final Map<Hotkey, Hold> holds;
+    private final Map<Hotkey, AtomicBoolean> held = new ConcurrentHashMap<>();
     private final List<String> problems = new ArrayList<>();
     private final CountDownLatch ready = new CountDownLatch(1);
     private final ExecutorService actions = Executors.newSingleThreadExecutor(
@@ -47,7 +60,8 @@ public final class GlobalHotkeys implements AutoCloseable {
     private final Thread thread;
     private volatile int threadId;
 
-    private final MethodHandle register, unregister, getMessage, peekMessage, postThreadMessage, currentThreadId;
+    private final MethodHandle register, unregister, getMessage, peekMessage, postThreadMessage, currentThreadId, keyState;
+    private volatile boolean closed;
     private final StructLayout callState = Linker.Option.captureStateLayout();
     private final VarHandle lastError = callState.varHandle(MemoryLayout.PathElement.groupElement("GetLastError"));
 
@@ -56,7 +70,13 @@ public final class GlobalHotkeys implements AutoCloseable {
      * reported by {@link #problems()}.
      */
     public GlobalHotkeys(Map<Hotkey, Runnable> bindings) throws InterruptedException {
+        this(bindings, Map.of());
+    }
+
+    /** As {@link #GlobalHotkeys(Map)}, plus keys that act while held. */
+    public GlobalHotkeys(Map<Hotkey, Runnable> bindings, Map<Hotkey, Hold> holds) throws InterruptedException {
         this.bindings = new LinkedHashMap<>(bindings);
+        this.holds = new LinkedHashMap<>(holds);
         Linker linker = Linker.nativeLinker();
         SymbolLookup user32 = SymbolLookup.libraryLookup("User32", Arena.global());
         SymbolLookup kernel32 = SymbolLookup.libraryLookup("Kernel32", Arena.global());
@@ -72,6 +92,7 @@ public final class GlobalHotkeys implements AutoCloseable {
         postThreadMessage = linker.downcallHandle(find(user32, "PostThreadMessageW"),
                 FunctionDescriptor.of(JAVA_INT, JAVA_INT, JAVA_INT, JAVA_LONG, JAVA_LONG));
         currentThreadId = linker.downcallHandle(find(kernel32, "GetCurrentThreadId"), FunctionDescriptor.of(JAVA_INT));
+        keyState = linker.downcallHandle(find(user32, "GetAsyncKeyState"), FunctionDescriptor.of(JAVA_SHORT, JAVA_INT));
 
         thread = Thread.ofPlatform().name("vct-hotkeys").daemon().start(this::loop);
         if (!ready.await(5, TimeUnit.SECONDS)) throw new IllegalStateException("hotkey thread did not start");
@@ -84,6 +105,7 @@ public final class GlobalHotkeys implements AutoCloseable {
 
     private void loop() {
         List<Hotkey> keys = new ArrayList<>(bindings.keySet());
+        keys.addAll(holds.keySet());
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment msg = arena.allocate(MSG_SIZE, 8);
             MemorySegment state = arena.allocate(callState);
@@ -106,16 +128,11 @@ public final class GlobalHotkeys implements AutoCloseable {
             while ((int) invoke(getMessage, msg, MemorySegment.NULL, 0, 0) > 0) {
                 if (msg.get(JAVA_INT, MSG_MESSAGE) != WM_HOTKEY) continue;
                 int id = (int) msg.get(JAVA_LONG, MSG_WPARAM);
-                if (id >= 1 && id <= keys.size()) {
-                    Runnable action = bindings.get(keys.get(id - 1));
-                    actions.execute(() -> {
-                        try {
-                            action.run();
-                        } catch (RuntimeException e) {
-                            System.err.println("Hotkey action failed: " + e);
-                        }
-                    });
-                }
+                if (id < 1 || id > keys.size()) continue;
+                Hotkey k = keys.get(id - 1);
+                Hold hold = holds.get(k);
+                if (hold == null) run(bindings.get(k));
+                else onHoldPressed(k, hold);
             }
             for (int i = 0; i < keys.size(); i++) invoke(unregister, MemorySegment.NULL, i + 1);
         } finally {
@@ -123,8 +140,41 @@ public final class GlobalHotkeys implements AutoCloseable {
         }
     }
 
+    /** Runs the press action, then waits on another thread for the key to come up. */
+    private void onHoldPressed(Hotkey k, Hold hold) {
+        AtomicBoolean down = held.computeIfAbsent(k, x -> new AtomicBoolean());
+        if (!down.compareAndSet(false, true)) return; // already held
+        run(hold.press());
+        Thread.ofPlatform().name("vct-hotkey-hold").daemon().start(() -> {
+            try {
+                // The high bit (a negative short) means "down". Ctrl, Alt etc. may be let go first.
+                while (!closed && (short) invoke(keyState, k.virtualKey()) < 0) Thread.sleep(RELEASE_POLL_MS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally {
+                down.set(false);
+                run(hold.release());
+            }
+        });
+    }
+
+    private void run(Runnable action) {
+        try {
+            actions.execute(() -> {
+                try {
+                    action.run();
+                } catch (RuntimeException e) {
+                    System.err.println("Hotkey action failed: " + e);
+                }
+            });
+        } catch (java.util.concurrent.RejectedExecutionException e) {
+            // closing
+        }
+    }
+
     @Override
     public void close() {
+        closed = true;
         invoke(postThreadMessage, threadId, WM_QUIT, 0L, 0L);
         try {
             thread.join(2_000);

@@ -53,6 +53,7 @@ class SessionControllerTest {
     private final List<TranslationResult> translated = new CopyOnWriteArrayList<>();
     private final List<AudioClip> played = new CopyOnWriteArrayList<>();
     private final List<String> sentToVoiceChat = new CopyOnWriteArrayList<>();
+    private final AtomicInteger liveSamples = new AtomicInteger();
     private final FakeEngines engines = new FakeEngines();
     private SessionController controller;
 
@@ -65,6 +66,7 @@ class SessionControllerTest {
         @Override public void onCaptureState(Source s, CaptureLoop.State st, String d) { events.add(s + " " + st); }
         @Override public void onRelayState(boolean active, boolean paused, String lang) { events.add("relay " + active + " " + paused + " " + lang); }
         @Override public void onRelaySent(Utterance u) { events.add("sent " + u.id()); }
+        @Override public void onRelayLive(boolean live) { events.add("live " + live); }
     };
 
     @AfterEach
@@ -141,7 +143,7 @@ class SessionControllerTest {
         return new AppSettings(d.remoteSource(), d.micDeviceId(), d.outputDevice(), d.nativeLanguage(),
                 d.recognizedLanguages(), d.whisperModel(), d.whisperGpu(), d.ttsVoice(), d.ttsSpeed(), d.openAiModel(),
                 d.translateHotkey(), d.replayHotkey(), d.contextLines(),
-                new AppSettings.RelaySettings(on, "ja", r.outputDevice(), r.ttsModel(), r.voice(), r.pauseHotkey()));
+                new AppSettings.RelaySettings(on, "ja", r.outputDevice(), r.ttsModel(), r.voice(), r.pauseHotkey(), r.liveHotkey()));
     }
 
     @Test
@@ -158,6 +160,24 @@ class SessionControllerTest {
         assertTrue(events.contains("relay true true ja"), events.toString());
         c.stop().get(5, TimeUnit.SECONDS);
         assertTrue(events.contains("relay false false null"), events.toString());
+    }
+
+    @Test
+    void holdingTheLiveKeySendsTheMicrophoneIntoTheCable() throws Exception {
+        SessionController c = controller();
+        c.setLive(true);
+        assertTrue(events.contains("notice Talk live needs Translate my speech. Turn it on in Settings, then start a session."),
+                events.toString());
+
+        c.start(withRelay(true)).get(5, TimeUnit.SECONDS);
+        c.setLive(true);
+        assertTrue(events.contains("live true"), events.toString());
+        await("microphone sent live", () -> liveSamples.get() > 16_000);
+        c.setLive(false);
+        await("live ended after the tail", () -> events.contains("live false") && events.contains("live stream closed"));
+        int after = liveSamples.get();
+        Thread.sleep(100);
+        assertEquals(after, liveSamples.get(), "nothing sent once released");
     }
 
     @Test
@@ -300,6 +320,14 @@ class SessionControllerTest {
             return new AudioSink() {
                 @Override public void play(AudioClip clip) { sentToVoiceChat.add(lastRelayText); }
                 @Override public void stop() {}
+
+                @Override
+                public com.vct.audio.AudioStream openStream(int sampleRate) {
+                    return new com.vct.audio.AudioStream() {
+                        @Override public void write(float[] samples) { liveSamples.addAndGet(samples.length); }
+                        @Override public void close() { events.add("live stream closed"); }
+                    };
+                }
             };
         }
 

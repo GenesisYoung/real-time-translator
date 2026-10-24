@@ -173,7 +173,8 @@ public final class TranslatorApp extends Application implements MainWindow.Actio
     }
 
     private void applySettingsToUi() {
-        window.setHotkeyHints(settings.translateHotkey(), settings.replayHotkey(), settings.relay().pauseHotkey());
+        window.setHotkeyHints(settings.translateHotkey(), settings.replayHotkey(), settings.relay().pauseHotkey(),
+                settings.relay().liveHotkey());
         window.setRemoteLabel(settings.remoteSource().label());
     }
 
@@ -186,8 +187,10 @@ public final class TranslatorApp extends Application implements MainWindow.Actio
         bindings.put(Hotkey.parse(settings.translateHotkey()), controller::translateLatest);
         bindings.put(Hotkey.parse(settings.replayHotkey()), controller::replay);
         bindings.put(Hotkey.parse(settings.relay().pauseHotkey()), controller::toggleRelayPaused);
+        Map<Hotkey, GlobalHotkeys.Hold> holds = Map.of(Hotkey.parse(settings.relay().liveHotkey()),
+                new GlobalHotkeys.Hold(() -> controller.setLive(true), () -> controller.setLive(false)));
         try {
-            hotkeys = new GlobalHotkeys(bindings);
+            hotkeys = new GlobalHotkeys(bindings, holds);
             return hotkeys.problems();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();

@@ -73,7 +73,9 @@ final class MainWindow implements SessionController.Listener {
     private final Indicator relay = new Indicator("My voice: off");
     private final Button relayButton = new Button("Pause my voice");
     private String pauseKey = "";
-    private boolean relayPaused;
+    private String liveKey = "";
+    private boolean relayActive, relayPaused, relayLive;
+    private String relayLanguage = "";
     /** Keep showing the newest line; false while the user has scrolled up to read older ones. */
     private boolean following = true;
     private final Label notice = new Label();
@@ -134,11 +136,13 @@ final class MainWindow implements SessionController.Listener {
         return stage;
     }
 
-    void setHotkeyHints(String translateKey, String replayKey, String pauseKey) {
+    void setHotkeyHints(String translateKey, String replayKey, String pauseKey, String liveKey) {
         translate.setText("Translate latest  (" + translateKey + ")");
         replay.setText("Replay  (" + replayKey + ")");
         this.pauseKey = pauseKey;
+        this.liveKey = liveKey;
         updateRelayButton();
+        showRelay();
     }
 
     private void updateRelayButton() {
@@ -184,14 +188,36 @@ final class MainWindow implements SessionController.Listener {
     @Override
     public void onRelayState(boolean active, boolean paused, String targetLanguage) {
         runOnFx(() -> {
-            String lang = targetLanguage == null ? "" : java.util.Locale.forLanguageTag(targetLanguage).getDisplayLanguage(Locale.ENGLISH);
-            relay.name.setText(active ? "My voice → " + lang : "My voice: off");
-            relay.show(!active ? "off" : paused ? "warn" : "ok", !active ? "Translate my speech is off"
-                    : paused ? "Paused: nothing you say is sent" : "Everything you say is sent in " + lang);
-            relayButton.setDisable(!active);
+            relayLanguage = targetLanguage == null ? "" : Locale.forLanguageTag(targetLanguage).getDisplayLanguage(Locale.ENGLISH);
+            relayActive = active;
             relayPaused = paused;
+            if (!active) relayLive = false;
+            relayButton.setDisable(!active);
             updateRelayButton();
+            showRelay();
         });
+    }
+
+    @Override
+    public void onRelayLive(boolean live) {
+        runOnFx(() -> {
+            relayLive = live;
+            showRelay();
+        });
+    }
+
+    private void showRelay() {
+        relay.name.getStyleClass().remove("live-text");
+        if (relayActive && relayLive) {
+            relay.name.setText("LIVE: your own voice");
+            relay.name.getStyleClass().add("live-text");
+            relay.show("live", "Your real voice goes into the voice chat while you hold " + liveKey);
+            return;
+        }
+        String hold = liveKey.isEmpty() ? "" : ". Hold " + liveKey + " to talk with your own voice";
+        relay.name.setText(relayActive ? "My voice → " + relayLanguage : "My voice: off");
+        relay.show(!relayActive ? "off" : relayPaused ? "warn" : "ok", !relayActive ? "Translate my speech is off"
+                : relayPaused ? "Paused: nothing you say is sent" + hold : "Everything you say is sent in " + relayLanguage + hold);
     }
 
     @Override

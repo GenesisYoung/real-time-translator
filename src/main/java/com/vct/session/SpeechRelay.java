@@ -31,6 +31,10 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <p>Translation and synthesis start at once for each line, in parallel; playback keeps the order in
  * which the lines were said. Unclear and very short lines are not sent, and the relay can be paused
  * for side comments.
+ *
+ * <p>While the user holds the "talk live" key, their real voice goes into the voice chat instead
+ * ({@link LiveVoice}): the translation playing is cut, later ones wait, and the lines said live are
+ * not translated.
  */
 public final class SpeechRelay implements AutoCloseable {
 
@@ -46,6 +50,9 @@ public final class SpeechRelay implements AutoCloseable {
         default void onRelaySkipped(Utterance u, String reason) {}
 
         default void onRelayError(Utterance u, String message) {}
+
+        /** The user's real voice started or stopped going into the voice chat. */
+        default void onRelayLive(boolean live) {}
     }
 
     /**
@@ -68,6 +75,7 @@ public final class SpeechRelay implements AutoCloseable {
     private final TranscriptSink transcript;
     private final Listener listener;
     private final FeedbackGuard echoGuard;
+    private final LiveVoice live;
     private final ExecutorService playback = Executors.newSingleThreadExecutor(
             Thread.ofPlatform().name("vct-relay-playback").daemon().factory());
     private final ExecutorService work = Executors.newVirtualThreadPerTaskExecutor();
@@ -79,10 +87,12 @@ public final class SpeechRelay implements AutoCloseable {
     /**
      * @param echoGuard told what is being spoken, so that if the translation ever comes back in
      *                  through a microphone, recognition drops it instead of translating it again
+     * @param live      the "talk live" stream into the same cable, or null without one
      */
     public SpeechRelay(Config config, TranslationService translator, TtsEngine tts, AudioSink sink,
-                       TranscriptSink transcript, FeedbackGuard echoGuard, Listener listener) {
+                       TranscriptSink transcript, FeedbackGuard echoGuard, LiveVoice live, Listener listener) {
         this.echoGuard = echoGuard;
+        this.live = live;
         this.config = config;
         this.translator = translator;
         this.tts = tts;
@@ -105,10 +115,36 @@ public final class SpeechRelay implements AutoCloseable {
         return paused;
     }
 
+    /**
+     * Starts or stops sending the user's real voice (the "talk live" key). Starting cuts the
+     * translation being spoken; translations ready meanwhile wait until the user is done.
+     *
+     * @throws IllegalStateException if the cable cannot be opened
+     */
+    public void setLive(boolean on) {
+        if (live == null || closed) return;
+        if (on) {
+            sink.stop();
+            if (live.press()) listener.onRelayLive(true);
+        } else {
+            live.release(); // ends after a short tail; onMicAudio reports it
+        }
+    }
+
+    public boolean isLive() {
+        return live != null && live.isLive();
+    }
+
+    /** The microphone as it is captured, for "talk live". Call from the capture thread. */
+    public void onMicAudio(float[] samples) {
+        if (live != null && live.onAudio(samples)) listener.onRelayLive(false);
+    }
+
     /** Offers a recognized line; only the user's own lines (MIC) are relayed. Never blocks. */
     public void submit(Utterance u) {
         if (closed || u.source() != Source.MIC) return;
-        String skip = paused ? "paused"
+        String skip = live != null && live.wasLive(u.start(), u.end()) ? "spoken live, not translated"
+                : paused ? "paused"
                 : u.lowConfidence() ? "unclear, not sent"
                 : letters(u.text()) < config.minLetters() ? "too short, not sent"
                 : null;
@@ -123,6 +159,8 @@ public final class SpeechRelay implements AutoCloseable {
         playback.execute(() -> {
             try {
                 speak(u, prepared.join());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
             } catch (CompletionException e) {
                 Throwable cause = e.getCause() == null ? e : e.getCause();
                 listener.onRelayError(u, "Could not send \"" + u.text() + "\": " + cause.getMessage());
@@ -159,7 +197,8 @@ public final class SpeechRelay implements AutoCloseable {
         }
     }
 
-    private void speak(Utterance u, Prepared p) {
+    private void speak(Utterance u, Prepared p) throws InterruptedException {
+        while (isLive() && !closed) Thread.sleep(20); // never over the user's own voice
         if (paused || closed) {
             listener.onRelaySkipped(u, "paused");
             return;
@@ -193,6 +232,7 @@ public final class SpeechRelay implements AutoCloseable {
     public void close() {
         closed = true;
         sink.stop();
+        if (live != null) live.close();
         playback.shutdownNow();
         work.shutdownNow();
     }

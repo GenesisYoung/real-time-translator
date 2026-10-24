@@ -2,6 +2,7 @@ package com.vct.session;
 
 import com.vct.audio.AudioClip;
 import com.vct.audio.AudioSink;
+import com.vct.audio.AudioStream;
 import com.vct.feedback.FeedbackGuard;
 import com.vct.model.Source;
 import com.vct.model.Utterance;
@@ -66,9 +67,18 @@ class SpeechRelayTest {
         clipText.put(c.samples().length, text);
         return c;
     };
+    private final AtomicInteger liveSamples = new AtomicInteger();
     private final AudioSink cable = new AudioSink() {
         @Override public void play(AudioClip clip) { spoken.add(clipText.get(clip.samples().length)); }
         @Override public void stop() { events.add("stop"); }
+
+        @Override
+        public AudioStream openStream(int sampleRate) {
+            return new AudioStream() {
+                @Override public void write(float[] samples) { liveSamples.addAndGet(samples.length); }
+                @Override public void close() {}
+            };
+        }
     };
     private final TranscriptSink transcriptSink = new TranscriptSink() {
         @Override public void writeUtterance(Utterance u) {}
@@ -77,14 +87,16 @@ class SpeechRelayTest {
     };
 
     private final FeedbackGuard echoGuard = FeedbackGuard.defaults(Clock.systemUTC());
+    private final LiveVoice live = new LiveVoice(cable, 16_000, Duration.ofMillis(150), Duration.ZERO, Clock.systemUTC());
 
     private SpeechRelay relay(String target) {
         relay = new SpeechRelay(SpeechRelay.Config.defaults(target),
                 new TranslationService(provider, new TranslationService.RetryPolicy(1, Duration.ofMillis(1), Duration.ofMillis(1), Duration.ofSeconds(5))),
-                tts, cable, transcriptSink, echoGuard, new SpeechRelay.Listener() {
+                tts, cable, transcriptSink, echoGuard, live, new SpeechRelay.Listener() {
                     @Override public void onRelaySkipped(Utterance u, String reason) { events.add("skip " + u.id() + ": " + reason); }
                     @Override public void onRelaySent(Utterance u) { events.add("sent " + u.id()); }
                     @Override public void onRelayError(Utterance u, String m) { events.add("error " + u.id() + ": " + m); }
+                    @Override public void onRelayLive(boolean on) { events.add("live " + on); }
                 });
         return relay;
     }
@@ -99,6 +111,10 @@ class SpeechRelayTest {
     private static Utterance mine(String text, String lang, boolean unclear) {
         Instant t = Instant.now();
         return new Utterance("m-" + (++n), Source.MIC, t, t.plusSeconds(2), text, lang, 0.9, unclear ? 0.4 : 0.9, unclear);
+    }
+
+    private static Utterance mine(String text, String lang, Instant start, Instant end) {
+        return new Utterance("m-" + (++n), Source.MIC, start, end, text, lang, 0.9, 0.9, false);
     }
 
     private static void await(String what, BooleanSupplier c) throws InterruptedException {
@@ -194,6 +210,33 @@ class SpeechRelayTest {
         r.submit(mine("等一下，我在换弹。", "zh", false));
         await("next line spoken", () -> spoken.size() == 1);
         assertEquals("Wait, I'm reloading.", spoken.getFirst());
+    }
+
+    @Test
+    void talkingLiveSendsTheRealVoiceAndTranslationsWait() throws Exception {
+        SpeechRelay r = relay("en");
+        Instant before = Instant.now().minusSeconds(3);
+        r.setLive(true);
+        assertTrue(events.contains("stop") && events.contains("live true"), "cuts the translation playing: " + events);
+        r.onMicAudio(new float[1_600]);
+        assertEquals(1_600, liveSamples.get(), "the microphone goes straight into the cable");
+
+        // Said in English while holding the key: already heard, not translated.
+        Thread.sleep(300);
+        Utterance english = mine("Push mid now.", "en", Instant.now().minusMillis(250), Instant.now());
+        r.submit(english);
+        assertTrue(events.contains("skip " + english.id() + ": spoken live, not translated"), events.toString());
+
+        // Said in Chinese before the key: translated, but spoken only once the user is done.
+        r.submit(mine("好的。", "zh", before, before.plusSeconds(1)));
+        Thread.sleep(200);
+        assertTrue(spoken.isEmpty(), "never over the user's own voice");
+        r.setLive(false);
+        r.onMicAudio(new float[160]); // the (zero) tail is over
+        assertTrue(events.contains("live false"), events.toString());
+        await("spoken after", () -> spoken.size() == 1);
+        assertEquals(List.of("Okay."), spoken);
+        assertEquals(1, requests.size(), "only the Chinese line was translated");
     }
 
     @Test

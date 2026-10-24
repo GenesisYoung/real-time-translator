@@ -11,6 +11,7 @@ import com.vct.model.Source;
 import com.vct.model.Utterance;
 import com.vct.segment.UtteranceSegmenter;
 import com.vct.segment.VoiceActivityDetector;
+import com.vct.session.LiveVoice;
 import com.vct.session.SessionListener;
 import com.vct.session.SessionSettings;
 import com.vct.session.SpeechRelay;
@@ -195,7 +196,7 @@ public final class SessionController implements AutoCloseable {
                 echoGuard, clock);
         SessionSettings settings = new SessionSettings(s.nativeLanguage(), new LinkedHashSet<>(s.recognizedLanguages()),
                 List.of(), s.contextLines(), Duration.ofMillis(1500), null, (float) s.ttsSpeed());
-        relay = startRelay(s, transcript, echoGuard);
+        relay = startRelay(s, transcript, echoGuard, clock);
         TranslatorSession started = new TranslatorSession(c, settings, new Forwarding(listener) {
             @Override
             public void onUtterance(Utterance u) {
@@ -208,14 +209,18 @@ public final class SessionController implements AutoCloseable {
         SpeechRelay r = relay;
         listener.onRelayState(r != null, false, r == null ? null : r.targetLanguage());
 
-        micLoop = new CaptureLoop("mic", backend, engines.mic(s), x -> started.onAudio(Source.MIC, x),
+        micLoop = new CaptureLoop("mic", backend, engines.mic(s), x -> {
+            started.onAudio(Source.MIC, x);
+            SpeechRelay relayNow = relay;
+            if (relayNow != null) relayNow.onMicAudio(x); // "talk live"
+        },
                 (state, detail) -> listener.onCaptureState(Source.MIC, state, detail), CaptureLoop.Config.defaults()).start();
         remoteLoop = new CaptureLoop("remote", backend, engines.remote(s), x -> started.onAudio(Source.REMOTE, x),
                 (state, detail) -> listener.onCaptureState(Source.REMOTE, state, detail), CaptureLoop.Config.defaults()).start();
     }
 
     /** Null when switched off, or when its output device is missing (Translate others keeps working). */
-    private SpeechRelay startRelay(AppSettings s, JsonlTranscriptWriter transcript, FeedbackGuard echoGuard) {
+    private SpeechRelay startRelay(AppSettings s, JsonlTranscriptWriter transcript, FeedbackGuard echoGuard, Clock clock) {
         AppSettings.RelaySettings rs = s.relay();
         if (!rs.enabled()) return null;
         String micName = microphoneName(s);
@@ -227,8 +232,9 @@ public final class SessionController implements AutoCloseable {
         }
         try {
             AudioSink cable = engines.relaySink(s);
+            LiveVoice live = LiveVoice.defaults(cable, CaptureLoop.Config.defaults().sampleRate(), clock);
             return new SpeechRelay(SpeechRelay.Config.defaults(rs.targetLanguage()), translation,
-                    engines.relayTts(s, apiKey), cable, transcript, echoGuard, listener);
+                    engines.relayTts(s, apiKey), cable, transcript, echoGuard, live, listener);
         } catch (RuntimeException e) {
             listener.onError("Translate my speech is off: " + e.getMessage()
                     + " Install VB-CABLE (see docs/speech-setup.md) or choose another output in Settings.", e);
@@ -258,6 +264,20 @@ public final class SessionController implements AutoCloseable {
         r.setPaused(!r.isPaused());
         listener.onRelayState(true, r.isPaused(), r.targetLanguage());
         listener.onNotice(r.isPaused() ? "Translate my speech: paused. Nothing you say is sent." : "Translate my speech: on.");
+    }
+
+    /** The "talk live" key went down ({@code true}) or up: sends the user's real voice while held. */
+    public void setLive(boolean on) {
+        SpeechRelay r = relay;
+        if (r == null) {
+            if (on) listener.onNotice("Talk live needs Translate my speech. Turn it on in Settings, then start a session.");
+            return;
+        }
+        try {
+            r.setLive(on);
+        } catch (RuntimeException e) {
+            listener.onError("Could not send your voice live: " + e.getMessage(), e);
+        }
     }
 
     private void stopNow() {
