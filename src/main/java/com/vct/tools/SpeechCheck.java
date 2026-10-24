@@ -92,6 +92,9 @@ public final class SpeechCheck {
             System.exit(2);
             return;
         }
+        if (System.getProperty("os.name").startsWith("Windows")) {
+            System.out.println("(If Chinese or Japanese text shows as garbage, quit, run \"chcp 65001\" and start again.)");
+        }
         int code;
         try {
             code = switch (o.mode()) {

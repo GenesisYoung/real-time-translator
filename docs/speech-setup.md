@@ -104,6 +104,15 @@ work with `--voice <folder>` too, but are not tested yet.
 
 ## 6. Check, one engine at a time
 
+First switch this terminal to UTF-8, once per window, so Chinese and Japanese text display correctly:
+
+```powershell
+chcp 65001
+```
+
+Without it, Windows uses its old code page 437, and Chinese shows as garbage like `σ╗Ñ┬╖`. Only the
+display is wrong: the voice and the transcript files have the correct text either way.
+
 **a. Tests.** These now include the Whisper tests against your `vct_stt.dll`:
 
 ```powershell
