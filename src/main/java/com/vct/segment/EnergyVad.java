@@ -2,7 +2,7 @@ package com.vct.segment;
 
 /**
  * Loudness-based VAD. A fallback and test double only: it cannot tell speech from game noise.
- * Silero VAD (via sherpa-onnx) is the production detector.
+ * {@link SileroVad} is the production detector.
  */
 public final class EnergyVad implements VoiceActivityDetector {
 

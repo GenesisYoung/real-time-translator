@@ -3,7 +3,7 @@
 On-demand voice-chat translation for Windows 11 (personal use). Speech recognition, VAD and
 TTS run locally; only the text of an utterance you explicitly ask to translate is sent to OpenAI.
 
-## Status: Phase 1, step 2 of 4 (audio capture)
+## Status: Phase 1, step 3 of 4 (speech engines)
 
 | Component | State |
 |---|---|
@@ -20,10 +20,16 @@ TTS run locally; only the text of an utterance you explicitly ask to translate i
 | WASAPI capture DLL: microphone, process loopback (Discord / all except this app), endpoint loopback | Implemented; compiles with MinGW and ran under Wine. **Not yet run on Windows 11** (see [native/README.md](native/README.md)) |
 | FFM binding, `CaptureLoop` (reconnect, default-device follow, Discord restart, format fallback) | Implemented, unit-tested; binding tested against a native stub |
 | `captureCheck` diagnostic (device list, level meters, WAV recording) | Implemented; for running on Windows |
-| **Silero VAD, Whisper (CUDA), Piper TTS through sherpa-onnx / whisper.cpp** | Not started (step 3) |
+| Silero VAD (ONNX Runtime, bundled model) | Implemented; matches the official Python wrapper frame by frame |
+| Whisper via whisper.cpp 1.8.5 (`native/stt`, CUDA on Windows) | Implemented; tested on Linux CPU with a placeholder model. **Real transcription and CUDA not yet run** |
+| TTS via sherpa-onnx 1.13.8 C API (Piper / MeloTTS / Kokoro voices) | Implemented; tested with a real English Piper voice on Linux. **Chinese voice not yet run** |
+| Headphone playback (Java Sound) | Implemented, tested with a null audio device |
+| `speechCheck` diagnostic (`transcribe`, `say`, `live`) | Implemented; setup in [docs/speech-setup.md](docs/speech-setup.md) |
 | **JavaFX UI, tray, hotkey, keychain storage (Windows Credential Manager), settings** | Not started (step 4) |
 
-66 tests, all passing on JDK 25 (Linux x64). Before step 2, the 44 core tests also passed on JDK 23 (macOS arm64). No tests have run on Windows yet.
+97 tests, all passing on JDK 25 (Linux x64) with every engine present. Without the optional native
+libraries and voices, 6 of them are skipped (Whisper binding, TTS synthesis, playback). The step 2 suite
+(66 tests) also passed on Windows 11.
 
 ## Build and test
 
